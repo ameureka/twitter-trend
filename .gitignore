@@ -45,14 +45,16 @@ env/
 *~
 
 # 日志文件
-logs/
 *.log
 
 # 数据库文件
 *.db
 *.sqlite
 *.sqlite3
-data/
+
+# 数据文件夹 - 保留文件夹结构但忽略内容
+data/*
+!data/.gitkeep
 
 # 临时文件
 *.tmp
@@ -62,11 +64,14 @@ Thumbs.db
 
 # 项目特定 - 不上传整个目录
 docs/
-project/
 backup/
 temp/
-logs/
-data/
+
+# 保留文件夹结构但忽略内容
+project/*
+!project/.gitkeep
+logs/*
+!logs/.gitkeep
 
 # 进程文件
 *.pid
