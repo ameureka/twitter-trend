@@ -1,0 +1,35 @@
+# 端口配置文件
+# 统一管理所有服务的端口配置
+
+# API服务端口
+api:
+  port: 8050
+  host: "0.0.0.0"
+
+# 前端服务端口
+frontend:
+  port: 8080
+  host: "0.0.0.0"
+
+# 数据库端口（如果使用远程数据库）
+database:
+  port: 5432  # PostgreSQL默认端口
+  # port: 3306  # MySQL默认端口
+
+# 监控服务端口
+monitoring:
+  prometheus_port: 9090
+  grafana_port: 3000
+
+# 开发环境配置
+development:
+  api_port: 8050
+  frontend_port: 8080
+  hot_reload: true
+
+# 生产环境配置
+production:
+  api_port: 8050
+  frontend_port: 80
+  ssl_port: 443
+  hot_reload: false

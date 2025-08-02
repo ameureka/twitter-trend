@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  twitter-publisher:
+    build: .
+    container_name: twitter-publisher
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./backups:/app/backups
+      - ./config:/app/config
+      - ./projects:/app/projects
+    environment:
+      - PYTHONPATH=/app
+      - TZ=Asia/Shanghai
+    ports:
+      - "8050:8050"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8050/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # 可选: 添加监控服务
+  # prometheus:
+  #   image: prom/prometheus
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+
+volumes:
+  twitter_data:
+  twitter_logs:

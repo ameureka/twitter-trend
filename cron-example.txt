@@ -1,0 +1,43 @@
+# Twitter 自动发布系统 - Cron 配置示例
+# 将以下内容添加到你的 crontab 中 (运行 crontab -e)
+
+# 设置环境变量
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+
+# 设置项目路径变量 - 请修改为实际路径
+PROJECT_PATH=/path/to/twitter-trend
+
+# 每小时扫描新内容 (maker_music_chuangxinyewu 项目，英文)
+0 * * * * cd $PROJECT_PATH && python3 app/main.py scan --project maker_music_chuangxinyewu --lang en >> logs/cron.log 2>&1
+
+# 每小时扫描新内容 (maker_music_chuangxinyewu 项目，中文)
+5 * * * * cd $PROJECT_PATH && python3 app/main.py scan --project maker_music_chuangxinyewu --lang cn >> logs/cron.log 2>&1
+
+# 每30分钟发布一次内容 (限制每次1个)
+*/30 * * * * cd $PROJECT_PATH && python3 app/main.py publish --limit 1 >> logs/cron.log 2>&1
+
+# 每2小时批量发布 (限制每次3个)
+0 */2 * * * cd $PROJECT_PATH && python3 app/main.py publish --batch --limit 3 >> logs/cron.log 2>&1
+
+# 每天凌晨2点重置卡住的任务
+0 2 * * * cd $PROJECT_PATH && python3 app/main.py reset-stuck >> logs/cron.log 2>&1
+
+# 每天凌晨3点进行健康检查
+0 3 * * * cd $PROJECT_PATH && python3 app/main.py health >> logs/cron.log 2>&1
+
+# 每周日凌晨4点查看状态统计
+0 4 * * 0 cd $PROJECT_PATH && python3 app/main.py status >> logs/cron.log 2>&1
+
+# 说明:
+# - 所有输出都重定向到 logs/cron.log 文件
+# - 请根据你的实际需求调整项目名称和时间间隔
+# - 确保在 PROJECT_PATH 变量中设置了正确的项目路径
+# - 建议先手动测试命令，确保正常工作后再添加到 crontab
+
+# 安装方法:
+# 1. 编辑 crontab: crontab -e
+# 2. 复制需要的行到 crontab 文件中
+# 3. 保存并退出
+# 4. 查看 crontab: crontab -l
+# 5. 查看日志: tail -f logs/cron.log

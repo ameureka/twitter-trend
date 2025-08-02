@@ -1,0 +1,131 @@
+# Twitter Trend 系统配置文件
+# 基于实际运行情况优化的生产环境配置
+
+# 端口配置
+ports:
+  api_port: 8050
+  frontend_port: 8080
+  prometheus_port: 9090
+  grafana_port: 3000
+
+analytics:
+  detailed_metrics: true
+  enabled: true
+  export_enabled: true
+  report_interval_hours: 24
+  retention_days: 90
+
+database:
+  auto_vacuum: true
+  backup_enabled: true
+  backup_interval_hours: 24
+  backup_retention_days: 30
+  connection_timeout: 30
+  pool_size: 10
+  path: ./data/twitter_publisher.db
+
+environment: production
+
+gemini:
+  api_key: ''
+  max_tokens: 1000
+  model: gemini-pro
+  temperature: 0.7
+  timeout_seconds: 30
+
+logging:
+  backup_count: 5
+  enable_console: true
+  enable_file: true
+  path: ./logs/app.log
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  level: INFO
+  max_size_mb: 100
+
+notifications:
+  email:
+    enabled: false
+    from_email: ''
+    password: ''
+    smtp_port: 587
+    smtp_server: ''
+    to_emails: []
+    username: ''
+  webhook:
+    enabled: false
+    secret: ''
+    url: ''
+
+performance:
+  alert_thresholds:
+    cpu_percent: 80
+    disk_percent: 90
+    memory_percent: 85
+    response_time_ms: 5000
+  batch_size: 10
+  cache_enabled: true
+  cache_ttl_seconds: 3600
+  connection_pool_size: 20
+  metrics_retention_days: 30
+  monitoring_enabled: true
+
+project_base_path: ./project
+
+publishing:
+  content_validation: true
+  default_language: en
+  duplicate_detection: true
+  enable_preview_mode: false
+  max_retries: 3
+  retry_delay_minutes: 15
+  use_ai_enhancement: true
+
+retry:
+  base_delay_seconds: 60
+  exponential_backoff: true
+  jitter: true
+  max_attempts: 5
+  max_delay_seconds: 3600
+
+scheduling:
+  batch_size: 3       # 适中的批量大小，平衡效率与稳定性
+  blackout_hours: []
+  enable_smart_scheduling: true
+  interval_hours: 24  # 24小时间隔，适合正常内容发布频率
+  interval_minutes_min: 15
+  interval_minutes_max: 30
+  max_concurrent_tasks: 2      # 双线程并发，平衡性能与资源使用
+  priority_projects: []
+  task_timeout_minutes: 30
+  check_interval: 60  # 60秒检查间隔，减少系统负载
+  min_publish_interval: 10800  # 最小发布间隔3小时，避免频繁发布
+  batch_delay_min_seconds: 30   # 批次任务间最小延迟30秒
+  batch_delay_max_seconds: 120  # 批次任务间最大延迟120秒
+
+task_management:
+  stuck_task_timeout_hours: 2
+  max_retries: 3
+  retry_backoff_base: 2
+  lock_timeout_minutes: 30
+  batch_size: 10
+
+security:
+  api_key_rotation_days: 90
+  audit_logging: true
+  encryption_enabled: false
+  max_requests_per_minute: 5  # 保守的请求频率，避免触发API限制
+  rate_limiting: true
+  secure_headers: true
+  api_timeout: 30
+  retry_on_rate_limit: true
+
+twitter:
+  access_token: ''
+  access_token_secret: ''
+  api_version: '2'
+  bearer_token: ''
+  consumer_key: ''
+  consumer_secret: ''
+  timeout_seconds: 30
+
+version: 2.0.0
