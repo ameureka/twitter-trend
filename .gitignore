@@ -60,12 +60,28 @@ data/
 .DS_Store
 Thumbs.db
 
-# 项目特定
-project/*/output_video_music/*.mp4
-project/*/output_video_music/*.avi
-project/*/output_video_music/*.mov
+# 项目特定 - 不上传整个目录
+docs/
+project/
 backup/
 temp/
+logs/
+data/
+
+# 进程文件
+*.pid
+twitter_trend.pid
+
+# 缓存和临时文件
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+*.egg-info/
 
 # API密钥和配置备份
 config.backup.yaml
