@@ -17,6 +17,26 @@ from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+class SessionContextManager:
+    """数据库会话上下文管理器"""
+    
+    def __init__(self, session_factory):
+        self.session_factory = session_factory
+        self.session = None
+    
+    def __enter__(self):
+        self.session = self.session_factory()
+        return self.session
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            if exc_type:
+                self.session.rollback()
+            else:
+                self.session.commit()
+            self.session.close()
+        return False
+
 class DatabaseManager:
     """强化版数据库管理器 - 支持迁移、备份和维护"""
     
@@ -75,7 +95,11 @@ class DatabaseManager:
     
     def get_session(self):
         """获取数据库会话"""
-        return self.SessionLocal
+        return self.SessionLocal()
+        
+    def get_session_context(self):
+        """获取数据库会话（支持上下文管理器）"""
+        return SessionContextManager(self.SessionLocal)
 
     def remove_session(self):
         """移除数据库会话"""

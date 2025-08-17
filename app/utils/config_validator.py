@@ -7,7 +7,8 @@ import os
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 from app.utils.logger import get_logger
-from app.utils.config import get_config
+from app.utils.enhanced_config import get_enhanced_config
+from app.utils.path_manager import get_path_manager
 
 logger = get_logger(__name__)
 
@@ -15,7 +16,7 @@ class ConfigValidator:
     """配置验证器"""
     
     def __init__(self):
-        self.config = get_config()
+        self.config = get_enhanced_config()
         self.errors = []
         self.warnings = []
     
@@ -76,13 +77,16 @@ class ConfigValidator:
             if not project_base_path:
                 self.errors.append("未配置项目基础路径 (project_base_path)")
             else:
-                path = Path(project_base_path)
-                if not path.exists():
-                    self.errors.append(f"项目基础路径不存在: {project_base_path}")
-                elif not path.is_dir():
-                    self.errors.append(f"项目基础路径不是目录: {project_base_path}")
-                elif not os.access(path, os.R_OK):
-                    self.errors.append(f"项目基础路径无读取权限: {project_base_path}")
+                # 使用路径管理器正确解析相对路径
+                path_manager = get_path_manager()
+                resolved_path = path_manager.get_project_path(project_base_path)
+                
+                if not resolved_path.exists():
+                    self.errors.append(f"项目基础路径不存在: {project_base_path} (解析为: {resolved_path})")
+                elif not resolved_path.is_dir():
+                    self.errors.append(f"项目基础路径不是目录: {project_base_path} (解析为: {resolved_path})")
+                elif not os.access(resolved_path, os.R_OK):
+                    self.errors.append(f"项目基础路径无读取权限: {project_base_path} (解析为: {resolved_path})")
             
             # 验证日志目录
             log_dir = self.config.get('logging', {}).get('log_dir', 'logs')

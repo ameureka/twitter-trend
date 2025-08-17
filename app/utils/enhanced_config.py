@@ -356,6 +356,21 @@ class EnhancedConfigManager:
         with self.lock:
             return self._get_nested_value(self.config_data, key, default)
             
+    def get_env(self, key: str, default: Any = None) -> Any:
+        """获取环境变量或配置值 - 修复缺失方法"""
+        # 首先尝试从环境变量获取
+        env_value = os.environ.get(key)
+        if env_value is not None:
+            return self._convert_env_value(env_value)
+            
+        # 如果环境变量不存在，尝试从配置获取
+        # 将环境变量格式转换为配置键格式
+        config_key = key.lower().replace('_', '.')
+        config_value = self.get(config_key, default)
+        
+        # 如果配置也不存在，返回默认值
+        return config_value if config_value is not None else default
+            
     def set(self, key: str, value: Any, save: bool = True) -> bool:
         """设置配置值"""
         try:

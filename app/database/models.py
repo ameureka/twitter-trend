@@ -57,6 +57,7 @@ class Project(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text)
     status = Column(String(50), nullable=False, default='active')  # active, paused, inactive
+    priority = Column(Integer, nullable=False, default=0)  # 项目优先级，数字越大优先级越高
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -80,6 +81,7 @@ class ContentSource(Base):
     total_items = Column(Integer, default=0)
     used_items = Column(Integer, default=0)
     last_scanned = Column(DateTime)
+    is_active = Column(Boolean, nullable=False, default=True)  # 内容源是否激活
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     
     # 关系

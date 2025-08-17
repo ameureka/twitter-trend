@@ -24,7 +24,7 @@ from sqlalchemy.orm import sessionmaker
 from app.database.database import DatabaseManager as BaseDBManager
 from app.database.models import Base, User, Project, PublishingTask, PublishingLog
 from app.utils.logger import get_logger
-from app.utils.config import get_config
+from app.utils.enhanced_config import get_enhanced_config
 from app.utils.path_manager import get_path_manager
 
 logger = get_logger(__name__)
@@ -38,7 +38,7 @@ class EnhancedDatabaseManager(BaseDBManager):
     
     def __init__(self, database_url: str = None):
         super().__init__(database_url)
-        self.config = get_config()
+        self.config = get_enhanced_config()
         self.path_manager = get_path_manager()
         self.db_url = database_url or self._get_default_database_url()
         

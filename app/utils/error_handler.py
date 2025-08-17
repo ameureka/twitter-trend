@@ -27,7 +27,7 @@ import json
 import requests
 
 from app.utils.logger import get_logger
-from app.utils.config import get_config
+from app.utils.enhanced_config import get_enhanced_config
 
 logger = get_logger(__name__)
 
@@ -94,7 +94,7 @@ class ErrorHandler:
     """错误处理器"""
     
     def __init__(self):
-        self.config = get_config()
+        self.config = get_enhanced_config()
         self.error_history = deque(maxlen=1000)  # 保留最近1000个错误
         self.error_stats = defaultdict(int)
         self.alert_rules = []

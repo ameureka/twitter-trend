@@ -257,6 +257,19 @@ show_usage() {
     echo "  健康检查:     ./deploy_twitter.sh health"
     echo "  查看日志:     ./deploy_twitter.sh logs"
     echo
+    echo "数据库查询和校验:"
+    echo "  查询工具列表: ./setup_linux_server.sh --db-query list"
+    echo "  常用查询命令: ./setup_linux_server.sh --db-query common"
+    echo "  完整数据校验: ./setup_linux_server.sh --db-query validate"
+    echo "  数据库概览:   ./setup_linux_server.sh --db-query overview"
+    echo "  健康检查:     ./setup_linux_server.sh --db-query health"
+    echo "  任务摘要:     ./setup_linux_server.sh --db-query tasks"
+    echo "  待发布任务:   ./setup_linux_server.sh --db-query pending"
+    echo "  最近任务:     ./setup_linux_server.sh --db-query recent"
+    echo "  紧急任务:     ./setup_linux_server.sh --db-query urgent"
+    echo "  数据库备份:   ./setup_linux_server.sh --db-query backup"
+    echo "  完整性检查:   ./setup_linux_server.sh --db-query integrity"
+    echo
     echo "发布调度配置:"
     echo "  配置文件:     config/enhanced_config.yaml (scheduling 部分)"
     echo "  发布间隔:     由 interval_hours 参数控制 (默认24小时)"
@@ -276,8 +289,157 @@ show_usage() {
     log_warn "请确保已正确配置 .env 文件中的 API 密钥!"
 }
 
+# 数据库查询和校验功能
+db_query() {
+    log_step "执行数据库查询和校验..."
+    
+    cd "$PROJECT_PATH"
+    source .venv/bin/activate
+    
+    if [ ! -f "scripts/database/db_query_summary.py" ]; then
+        log_error "数据库查询工具不存在: scripts/database/db_query_summary.py"
+        return 1
+    fi
+    
+    case "$1" in
+        "list")
+            log_info "显示所有可用的数据库查询工具"
+            python scripts/database/db_query_summary.py --list
+            ;;
+        "common")
+            log_info "显示常用查询命令"
+            python scripts/database/db_query_summary.py --common
+            ;;
+        "validate")
+            log_info "执行完整的数据库校验"
+            python scripts/database/db_query_summary.py --validate
+            ;;
+        "overview")
+            log_info "显示数据库概览"
+            python scripts/database/db_query_summary.py --query overview
+            ;;
+        "health")
+            log_info "执行数据库健康检查"
+            python scripts/database/db_query_summary.py --query health_check
+            ;;
+        "tasks")
+            log_info "显示任务摘要"
+            python scripts/database/db_query_summary.py --query task_summary
+            ;;
+        "pending")
+            log_info "显示待发布任务"
+            python scripts/database/db_query_summary.py --query pending_tasks
+            ;;
+        "recent")
+            log_info "显示最近任务"
+            python scripts/database/db_query_summary.py --query recent_tasks
+            ;;
+        "urgent")
+            log_info "显示紧急任务"
+            python scripts/database/db_query_summary.py --query urgent_tasks
+            ;;
+        "backup")
+            log_info "执行数据库备份"
+            python scripts/database/db_query_summary.py --query backup_db
+            ;;
+        "integrity")
+            log_info "执行完整性检查"
+            python scripts/database/db_query_summary.py --query integrity_check
+            ;;
+        *)
+            log_info "显示数据库查询工具列表"
+            python scripts/database/db_query_summary.py --list
+            echo
+            log_info "可用的查询选项:"
+            echo "  list      - 显示所有可用工具"
+            echo "  common    - 显示常用查询命令"
+            echo "  validate  - 执行完整数据库校验"
+            echo "  overview  - 显示数据库概览"
+            echo "  health    - 执行健康检查"
+            echo "  tasks     - 显示任务摘要"
+            echo "  pending   - 显示待发布任务"
+            echo "  recent    - 显示最近任务"
+            echo "  urgent    - 显示紧急任务"
+            echo "  backup    - 执行数据库备份"
+            echo "  integrity - 执行完整性检查"
+            ;;
+    esac
+}
+
+# 显示帮助信息
+show_help() {
+    echo "Twitter 自动发布系统 - Linux 服务器部署脚本"
+    echo ""
+    echo "使用方法: $0 [选项]"
+    echo ""
+    echo "选项:"
+    echo "  --auto               自动化部署（跳过所有交互式询问）"
+    echo "  --with-cron          自动设置 cron 维护任务"
+    echo "  --with-systemd       自动设置 systemd 后台服务"
+    echo "  --with-validation    自动执行数据库校验"
+    echo "  --full               完整自动化部署（包含所有选项）"
+    echo "  -q, --db-query CMD   执行数据库查询命令"
+    echo "  --help               显示此帮助信息"
+    echo ""
+    echo "示例:"
+    echo "  $0                   # 交互式部署"
+    echo "  $0 --auto           # 基础自动化部署"
+    echo "  $0 --full           # 完整自动化部署"
+    echo "  $0 --with-systemd   # 部署并设置后台服务"
+    echo "  $0 -q validate      # 执行数据库校验"
+}
+
 # 主函数
 main() {
+    # 默认配置
+    AUTO_MODE=false
+    SETUP_CRON=false
+    SETUP_SYSTEMD=false
+    RUN_VALIDATION=false
+    
+    # 解析命令行参数
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --auto)
+                AUTO_MODE=true
+                shift
+                ;;
+            --with-cron)
+                SETUP_CRON=true
+                shift
+                ;;
+            --with-systemd)
+                SETUP_SYSTEMD=true
+                shift
+                ;;
+            --with-validation)
+                RUN_VALIDATION=true
+                shift
+                ;;
+            --full)
+                AUTO_MODE=true
+                SETUP_CRON=true
+                SETUP_SYSTEMD=true
+                RUN_VALIDATION=true
+                shift
+                ;;
+            -q|--db-query)
+                shift
+                db_query "$1"
+                return
+                ;;
+            --help)
+                show_help
+                exit 0
+                ;;
+            *)
+                log_error "未知选项: $1"
+                show_help
+                exit 1
+                ;;
+        esac
+    done
+    
     echo "=== Twitter 自动发布系统 - Linux 服务器部署脚本 ==="
     echo
     
@@ -292,18 +454,42 @@ main() {
     log_info "基础部署完成!"
     echo
     
-    # 询问用户是否要设置维护性任务
-    read -p "是否要设置 cron 维护性任务（重置、健康检查、状态统计）? (y/N): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
+    # 根据模式决定是否设置维护性任务
+    if [ "$AUTO_MODE" = true ] || [ "$SETUP_CRON" = true ]; then
+        log_info "自动设置 cron 维护性任务..."
         setup_cron
+    elif [ "$AUTO_MODE" = false ]; then
+        read -p "是否要设置 cron 维护性任务（重置、健康检查、状态统计）? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            setup_cron
+        fi
     fi
     
+    # 根据模式决定是否设置 systemd 服务
     echo
-    read -p "是否要设置 systemd 后台服务? (y/N): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
+    if [ "$AUTO_MODE" = true ] || [ "$SETUP_SYSTEMD" = true ]; then
+        log_info "自动设置 systemd 后台服务..."
         setup_systemd
+    elif [ "$AUTO_MODE" = false ]; then
+        read -p "是否要设置 systemd 后台服务? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            setup_systemd
+        fi
+    fi
+    
+    # 根据模式决定是否执行数据库校验
+    echo
+    if [ "$AUTO_MODE" = true ] || [ "$RUN_VALIDATION" = true ]; then
+        log_info "自动执行数据库校验..."
+        db_query "validate"
+    elif [ "$AUTO_MODE" = false ]; then
+        read -p "是否要执行数据库校验? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            db_query "validate"
+        fi
     fi
     
     show_usage

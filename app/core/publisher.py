@@ -5,8 +5,9 @@ import os
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from app.utils.logger import get_logger
-from app.utils.config import get_config
+from app.utils.enhanced_config import get_enhanced_config
 from app.utils.path_manager import get_path_manager
+from app.utils.dynamic_path_manager import get_dynamic_path_manager
 
 try:
     import tweepy
@@ -29,6 +30,7 @@ class TwitterPublisher:
         
         # 初始化路径管理器
         self.path_manager = get_path_manager()
+        self.dynamic_path_manager = get_dynamic_path_manager()
         
         # 初始化Twitter API客户端
         try:
@@ -93,9 +95,34 @@ class TwitterPublisher:
         logger.info(f"[PUBLISHER_DEBUG] 开始上传视频: {os.path.basename(video_path)} ({file_size / (1024*1024):.1f}MB)")
         
         try:
-            # 使用路径管理器标准化路径
-            normalized_path = self.path_manager.normalize_path(video_path)
-            logger.info(f"[PUBLISHER_DEBUG] 标准化路径: {normalized_path}")
+            # 使用动态路径管理器验证和解析视频路径
+            validation_result = self.dynamic_path_manager.validate_media_file(video_path)
+            logger.info(f"[PUBLISHER_DEBUG] 媒体文件验证结果: {validation_result}")
+            
+            if validation_result['is_hardcoded']:
+                logger.warning(f"[PUBLISHER_DEBUG] 检测到硬编码路径: {video_path}")
+                logger.info(f"[PUBLISHER_DEBUG] 转换为相对路径: {validation_result['converted_path']}")
+            
+            if not validation_result['exists']:
+                error_msg = f"视频文件不存在: {validation_result['resolved_path']} (原路径: {video_path})"
+                if validation_result['error']:
+                    error_msg += f", 错误: {validation_result['error']}"
+                logger.error(f"[PUBLISHER_DEBUG] {error_msg}")
+                
+                # 尝试通过文件名查找视频文件
+                filename = os.path.basename(video_path)
+                found_file = self.dynamic_path_manager.find_media_file(filename)
+                
+                if found_file:
+                    logger.info(f"[PUBLISHER_DEBUG] 通过文件名找到视频文件: {found_file}")
+                    normalized_path = found_file
+                else:
+                    raise FileNotFoundError(error_msg)
+            else:
+                # 使用验证通过的路径
+                normalized_path = self.dynamic_path_manager.resolve_media_path(video_path)
+                
+            logger.info(f"[PUBLISHER_DEBUG] 最终使用路径: {normalized_path}")
             
             # 1. 上传媒体文件
             logger.info(f"[PUBLISHER_DEBUG] 开始调用Twitter API上传媒体")
@@ -263,29 +290,47 @@ class TwitterPublisher:
     def _validate_media_file(self, file_path: str) -> bool:
         """验证媒体文件"""
         try:
-            # 使用路径管理器标准化路径
-            normalized_path = self.path_manager.normalize_path(file_path)
+            # 使用动态路径管理器验证媒体文件
+            validation_result = self.dynamic_path_manager.validate_media_file(file_path)
             
-            if not normalized_path.exists():
-                logger.error(f"媒体文件不存在: {file_path} -> {normalized_path}")
+            if validation_result['is_hardcoded']:
+                logger.warning(f"检测到硬编码路径: {file_path}")
+                logger.info(f"转换为相对路径: {validation_result['converted_path']}")
+            
+            if validation_result['error']:
+                logger.error(f"媒体文件验证错误: {validation_result['error']}")
                 return False
             
-            if not normalized_path.is_file():
-                logger.error(f"路径不是文件: {file_path} -> {normalized_path}")
+            if not validation_result['exists']:
+                logger.error(f"媒体文件不存在: {validation_result['resolved_path']} (原路径: {file_path})")
+                
+                # 尝试通过文件名查找媒体文件
+                filename = os.path.basename(file_path)
+                found_file = self.dynamic_path_manager.find_media_file(filename)
+                
+                if found_file:
+                    logger.info(f"通过文件名找到媒体文件: {found_file}")
+                    # 重新验证找到的文件
+                    return self._validate_media_file(str(found_file))
+                else:
+                    return False
+            
+            if not validation_result['readable']:
+                logger.error(f"媒体文件不可读: {validation_result['resolved_path']}")
                 return False
             
-            file_size = normalized_path.stat().st_size
+            file_size = validation_result['size']
             if file_size == 0:
-                logger.error(f"媒体文件为空: {file_path} -> {normalized_path}")
+                logger.error(f"媒体文件为空: {validation_result['resolved_path']}")
                 return False
             
             # 检查文件大小限制
             max_size = 512 * 1024 * 1024  # 512MB
             if file_size > max_size:
-                logger.error(f"媒体文件过大: {file_path} -> {normalized_path} ({file_size / 1024 / 1024:.1f}MB)")
+                logger.error(f"媒体文件过大: {validation_result['resolved_path']} ({file_size / 1024 / 1024:.1f}MB)")
                 return False
             
-            logger.debug(f"媒体文件验证通过: {file_path} -> {normalized_path}")
+            logger.debug(f"媒体文件验证通过: {file_path} -> {validation_result['resolved_path']}")
             return True
             
         except Exception as e:

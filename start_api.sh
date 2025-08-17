@@ -10,6 +10,9 @@ HOST="127.0.0.1"
 PORT="8050"
 DEBUG="false"
 ENV_FILE=".env"
+DAEMON_MODE=false
+PID_FILE="twitter_api.pid"
+LOG_FILE="logs/api.log"
 
 # 颜色定义
 RED='\033[0;31m'
@@ -29,12 +32,16 @@ show_help() {
     echo "  -p, --port PORT      API服务器端口 (默认: 8050)"
     echo "  -d, --debug          启用调试模式"
     echo "  -e, --env-file FILE  环境变量文件路径 (默认: .env)"
+    echo "  --daemon             后台运行模式"
+    echo "  --pid-file FILE      PID文件路径 (默认: twitter_api.pid)"
+    echo "  --log-file FILE      日志文件路径 (默认: logs/api.log)"
     echo "  --help               显示此帮助信息"
     echo ""
     echo "示例:"
     echo "  $0                           # 使用默认配置启动"
     echo "  $0 -h 0.0.0.0 -p 8050        # 在所有接口的8050端口启动"
     echo "  $0 -d                        # 启用调试模式"
+    echo "  $0 --daemon                  # 后台运行"
     echo "  $0 -e .env.production        # 使用生产环境配置"
 }
 
@@ -47,6 +54,18 @@ while [[ $# -gt 0 ]]; do
             ;;
         -p|--port)
             PORT="$2"
+            shift 2
+            ;;
+        --daemon)
+            DAEMON_MODE=true
+            shift
+            ;;
+        --pid-file)
+            PID_FILE="$2"
+            shift 2
+            ;;
+        --log-file)
+            LOG_FILE="$2"
             shift 2
             ;;
         -d|--debug)
@@ -160,6 +179,20 @@ check_port() {
     fi
 }
 
+# 检查是否已在运行
+check_running() {
+    if [ -f "$PID_FILE" ]; then
+        local pid=$(cat "$PID_FILE")
+        if ps -p $pid > /dev/null 2>&1; then
+            echo -e "${YELLOW}API服务已在运行 (PID: $pid)${NC}"
+            exit 1
+        else
+            echo -e "${YELLOW}删除过期的PID文件${NC}"
+            rm -f "$PID_FILE"
+        fi
+    fi
+}
+
 # 启动API服务
 start_api() {
     echo -e "${BLUE}启动API服务...${NC}"
@@ -169,8 +202,7 @@ start_api() {
     echo -e "${GREEN}📖 API文档: http://$HOST:$PORT/docs${NC}"
     echo -e "${GREEN}🔧 调试模式: $([ "$DEBUG" = "true" ] && echo "启用" || echo "禁用")${NC}"
     echo -e "${GREEN}📄 环境文件: $ENV_FILE${NC}"
-    echo ""
-    echo -e "${YELLOW}按 Ctrl+C 停止服务${NC}"
+    echo -e "${GREEN}🔄 运行模式: $([ "$DAEMON_MODE" = true ] && echo "后台" || echo "前台")${NC}"
     echo ""
     
     # 设置环境变量
@@ -178,11 +210,35 @@ start_api() {
     export API_PORT="$PORT"
     export DEBUG="$DEBUG"
     
-    # 启动服务
+    # 构建启动命令
+    local cmd="python3 -m api.main api --host $HOST --port $PORT"
     if [ "$DEBUG" = "true" ]; then
-        python3 -m api.main api --host "$HOST" --port "$PORT" --debug
+        cmd="$cmd --debug"
+    fi
+    
+    if [ "$DAEMON_MODE" = true ]; then
+        # 确保日志目录存在
+        mkdir -p "$(dirname "$LOG_FILE")"
+        
+        echo -e "${GREEN}以后台模式启动API服务...${NC}"
+        echo -e "${BLUE}日志文件: $LOG_FILE${NC}"
+        echo -e "${BLUE}PID文件: $PID_FILE${NC}"
+        echo ""
+        
+        # 后台启动
+        nohup $cmd > "$LOG_FILE" 2>&1 &
+        local pid=$!
+        echo $pid > "$PID_FILE"
+        
+        echo -e "${GREEN}✓ API服务已在后台启动 (PID: $pid)${NC}"
+        echo -e "${BLUE}使用以下命令查看日志: tail -f $LOG_FILE${NC}"
+        echo -e "${BLUE}使用以下命令停止服务: kill $pid 或 kill \$(cat $PID_FILE)${NC}"
     else
-        python3 -m api.main api --host "$HOST" --port "$PORT"
+        echo -e "${YELLOW}按 Ctrl+C 停止服务${NC}"
+        echo ""
+        
+        # 前台启动
+        eval $cmd
     fi
 }
 
@@ -190,6 +246,9 @@ start_api() {
 main() {
     echo -e "${BLUE}=== Twitter自动发布系统 API启动器 ===${NC}"
     echo ""
+    
+    # 检查是否已在运行
+    check_running
     
     # 检查系统环境
     check_python
@@ -204,7 +263,7 @@ main() {
 }
 
 # 信号处理
-trap 'echo -e "\n${YELLOW}正在停止API服务...${NC}"; exit 0' INT TERM
+trap 'echo -e "\n${YELLOW}正在停止API服务...${NC}"; [ -f "$PID_FILE" ] && rm -f "$PID_FILE"; exit 0' INT TERM
 
 # 运行主函数
 main

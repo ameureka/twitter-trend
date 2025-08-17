@@ -5,8 +5,15 @@
 
 class APIService {
     constructor() {
-        // 使用当前页面的origin作为API基础URL
-        this.baseURL = window.location.origin;
+        // 使用当前页面的origin作为API基础URL，如果是8080端口则指向8050
+        const currentPort = window.location.port;
+        if (currentPort === '8080') {
+            // 开发环境，前端在8080，API在8050
+            this.baseURL = window.location.protocol + '//' + window.location.hostname + ':8050';
+        } else {
+            // 生产环境或其他情况
+            this.baseURL = window.location.origin;
+        }
         this.apiKey = localStorage.getItem('api_key') || 'dev-api-key-12345'; // 开发环境默认API密钥
         this.defaultHeaders = {
             'Content-Type': 'application/json',
@@ -195,7 +202,7 @@ class APIService {
      * @returns {Promise} 统计数据
      */
     async getDashboardStats() {
-        return this.get('/api/dashboard/stats');
+        return this.get('/api/dashboard/stats/');
     }
 
     /**
@@ -203,7 +210,7 @@ class APIService {
      * @returns {Promise} 健康状态
      */
     async getSystemHealth() {
-        return this.get('/api/dashboard/health');
+        return this.get('/api/dashboard/health/');
     }
 
     /**
@@ -212,7 +219,7 @@ class APIService {
      * @returns {Promise} 最近活动
      */
     async getRecentActivity(limit = 10) {
-        return this.get('/api/dashboard/recent-activity', { limit });
+        return this.get('/api/dashboard/recent-activity/', { limit });
     }
 
     /**
@@ -220,7 +227,7 @@ class APIService {
      * @returns {Promise} 快速统计
      */
     async getQuickStats() {
-        return this.get('/api/dashboard/quick-stats');
+        return this.get('/api/dashboard/quick-stats/');
     }
 
     // ==================== 任务管理 ====================
@@ -431,7 +438,7 @@ class APIService {
      * @returns {Promise} 系统信息
      */
     async getSystemInfo() {
-        return this.get('/api/system/info');
+        return this.get('/api/system/info/');
     }
 
     /**
@@ -439,7 +446,7 @@ class APIService {
      * @returns {Promise} 重启结果
      */
     async restartSystem() {
-        return this.post('/api/system/restart');
+        return this.post('/api/system/restart/');
     }
 
     /**

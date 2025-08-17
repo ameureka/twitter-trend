@@ -116,3 +116,28 @@ yarn-error.log*
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# 备份文件
+*.backup
+*.backup-*
+*.bak
+*.old
+*.orig
+
+# 临时工作目录
+workspace/
+test_data/
+output_video_music/
+backups/
+
+# Claude/MCP相关
+.claude.backup*
+.mcp.json.backup*
+
+# 临时数据库
+twitter_publisher.db
+
+# 临时记录文件
+backtest_record.md
+todo.md
+修改备注信息.txt

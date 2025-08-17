@@ -3,11 +3,12 @@
 import os
 import json
 import glob
+import random
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.database.models import User, Project, ContentSource, PublishingTask
 from app.database.repository import (
@@ -17,6 +18,7 @@ from app.database.repository import (
 from app.utils.logger import get_logger
 from app.utils.file_handler import get_media_files, get_file_hash
 from app.utils.path_manager import get_path_manager
+from app.utils.enhanced_config import get_enhanced_config
 
 class ProjectManager:
     def __init__(self, db_session: Session, project_base_path: str, user_id: int = 1):
@@ -25,16 +27,136 @@ class ProjectManager:
         self.user_id = user_id
         self.logger = get_logger(__name__)
         self.path_manager = get_path_manager()
+        self.config = get_enhanced_config()
+        
+        # 获取调度配置
+        scheduling_config = self.config.get('scheduling', {})
+        self.optimal_hours = scheduling_config.get('optimal_hours', [9, 12, 15, 18, 21])
         
         # 初始化仓库
         self.user_repo = UserRepository(db_session)
         self.project_repo = ProjectRepository(db_session)
         self.content_source_repo = ContentSourceRepository(db_session)
         self.task_repo = PublishingTaskRepository(db_session)
-
-    def scan_and_create_tasks(self, project_name: str, language: str):
-        """扫描指定项目，为新发现的媒体文件创建发布任务。"""
+    
+    def _generate_distributed_schedule_times(self, count: int, days_ahead: int = 30) -> List[datetime]:
+        """生成分散在未来几天的任务调度时间，遵循每日任务数量限制"""
+        if count <= 0:
+            return []
+        
+        # 获取调度配置
+        scheduling_config = self.config.get('scheduling', {})
+        daily_max_tasks = scheduling_config.get('daily_max_tasks', 6)
+        daily_min_tasks = scheduling_config.get('daily_min_tasks', 5)
+        
+        schedule_times = []
+        now = datetime.now()
+        start_date = now.date()
+        
+        # 查询现有任务的日期分布
+        existing_tasks_by_date = {}
+        try:
+            existing_tasks = self.task_repo.session.query(PublishingTask).filter(
+                PublishingTask.status == 'pending',
+                PublishingTask.scheduled_at >= now
+            ).all()
+            
+            for task in existing_tasks:
+                task_date = task.scheduled_at.date()
+                existing_tasks_by_date[task_date] = existing_tasks_by_date.get(task_date, 0) + 1
+        except Exception as e:
+            self.logger.warning(f"查询现有任务失败: {e}")
+        
+        # 分配任务到不同日期
+        current_day = 0
+        tasks_assigned = 0
+        
+        while tasks_assigned < count and current_day < days_ahead:
+            target_date = start_date + timedelta(days=current_day)
+            
+            # 检查该日期已有的任务数量
+            existing_count = existing_tasks_by_date.get(target_date, 0)
+            
+            # 计算该日期还能分配的任务数量
+            available_slots = max(0, daily_max_tasks - existing_count)
+            
+            if available_slots > 0:
+                # 计算本日要分配的任务数量
+                remaining_tasks = count - tasks_assigned
+                tasks_for_today = min(available_slots, remaining_tasks)
+                
+                # 为该日期生成任务时间
+                for i in range(tasks_for_today):
+                    # 随机选择一个最佳时间段
+                    optimal_hour = random.choice(self.optimal_hours)
+                    
+                    # 在该小时内随机选择分钟
+                    minute = random.randint(0, 59)
+                    second = random.randint(0, 59)
+                    
+                    # 构造时间点
+                    scheduled_time = datetime.combine(target_date, datetime.min.time()).replace(
+                        hour=optimal_hour,
+                        minute=minute,
+                        second=second,
+                        microsecond=0
+                    )
+                    
+                    # 确保时间不早于当前时间
+                    if scheduled_time <= now:
+                        scheduled_time = now + timedelta(minutes=random.randint(5, 60))
+                    
+                    schedule_times.append(scheduled_time)
+                    tasks_assigned += 1
+                
+                # 更新该日期的任务计数
+                existing_tasks_by_date[target_date] = existing_count + tasks_for_today
+            
+            current_day += 1
+        
+        # 如果还有未分配的任务，强制分配到后续日期
+        if tasks_assigned < count:
+            remaining = count - tasks_assigned
+            self.logger.warning(f"有 {remaining} 个任务无法在 {days_ahead} 天内合理分配，将强制分配到后续日期")
+            
+            for i in range(remaining):
+                target_date = start_date + timedelta(days=days_ahead + i // daily_max_tasks)
+                optimal_hour = random.choice(self.optimal_hours)
+                minute = random.randint(0, 59)
+                second = random.randint(0, 59)
+                
+                scheduled_time = datetime.combine(target_date, datetime.min.time()).replace(
+                    hour=optimal_hour,
+                    minute=minute,
+                    second=second,
+                    microsecond=0
+                )
+                
+                schedule_times.append(scheduled_time)
+        
+        # 按时间排序
+        schedule_times.sort()
+        return schedule_times
+    
+    def scan_and_create_tasks(self, project_name: str, language: str, max_tasks_per_scan: int = None):
+        """扫描指定项目，为新发现的媒体文件创建发布任务。
+        
+        Args:
+            project_name: 项目名称
+            language: 语言
+            max_tasks_per_scan: 单次扫描最大创建任务数，如果为None则使用配置中的daily_max_tasks
+        """
         self.logger.info(f"开始扫描项目: {project_name}, 语言: {language}")
+        
+        # 获取每日任务限制配置
+        scheduling_config = self.config.get('scheduling', {})
+        daily_max_tasks = scheduling_config.get('daily_max_tasks', 6)
+        
+        # 如果没有指定最大任务数，使用配置中的daily_max_tasks
+        if max_tasks_per_scan is None:
+            max_tasks_per_scan = daily_max_tasks
+        
+        self.logger.info(f"单次扫描最大创建任务数: {max_tasks_per_scan}")
         
         try:
             # 1. 在数据库中查找或创建项目记录
@@ -53,8 +175,8 @@ class ProjectManager:
                 self.logger.warning(f"JSON目录不存在: {json_dir}")
                 return 0
 
-            # 3. 遍历视频文件
-            new_tasks_count = 0
+            # 3. 收集所有需要创建的任务信息
+            pending_tasks = []
             for video_file in video_dir.glob('*.mp4'):
                 filename = video_file.name
                 # 使用路径管理器标准化媒体文件路径
@@ -66,11 +188,22 @@ class ProjectManager:
                 if not metadata_path:
                     self.logger.warning(f"未找到 {filename} 对应的 {language} 语言元数据文件")
                     continue
-                    
-                # 5. 获取内容源
+                
+                # 5. 检查任务是否已存在
+                existing_task = self.task_repo.session.query(PublishingTask).filter(
+                    PublishingTask.project_id == project.id,
+                    PublishingTask.media_path == media_path,
+                    PublishingTask.status.in_(['pending', 'locked', 'in_progress', 'success'])
+                ).first()
+                
+                if existing_task:
+                    self.logger.debug(f"任务已存在，跳过: {filename} (状态: {existing_task.status})")
+                    continue
+                
+                # 6. 获取内容源
                 content_source = self._get_content_source(project.id, 'video', video_dir)
                 
-                # 6. 使用防重复创建方法
+                # 7. 准备任务数据
                 content_data = {
                     'metadata_path': metadata_path,
                     'language': language,
@@ -79,20 +212,41 @@ class ProjectManager:
                     'max_retries': 3
                 }
                 
-                task, is_new = self.task_repo.create_task_if_not_exists(
-                    project_id=project.id,
-                    source_id=content_source.id,
-                    media_path=media_path,
-                    content_data=content_data
-                )
+                pending_tasks.append({
+                    'filename': filename,
+                    'project_id': project.id,
+                    'source_id': content_source.id,
+                    'media_path': media_path,
+                    'content_data': content_data
+                })
                 
-                if is_new:
-                    new_tasks_count += 1
-                    self.logger.info(f"创建新任务: {filename}")
-                else:
-                    self.logger.debug(f"任务已存在，跳过: {filename} (状态: {task.status})")
+                # 限制单次扫描创建的任务数量
+                if len(pending_tasks) >= max_tasks_per_scan:
+                    self.logger.info(f"已达到单次扫描最大任务数限制 ({max_tasks_per_scan})，停止收集更多任务")
+                    break
             
-            # 8. 更新项目扫描时间
+            # 8. 如果有待创建的任务，生成分散的调度时间
+            new_tasks_count = 0
+            if pending_tasks:
+                # 生成分散的调度时间
+                schedule_times = self._generate_distributed_schedule_times(len(pending_tasks))
+                
+                # 创建任务
+                for i, task_info in enumerate(pending_tasks):
+                    scheduled_at = schedule_times[i] if i < len(schedule_times) else datetime.now() + timedelta(minutes=i*5)
+                    
+                    task = self.task_repo.create_task(
+                        project_id=task_info['project_id'],
+                        source_id=task_info['source_id'],
+                        media_path=task_info['media_path'],
+                        content_data=task_info['content_data'],
+                        scheduled_at=scheduled_at
+                    )
+                    
+                    new_tasks_count += 1
+                    self.logger.info(f"创建新任务: {task_info['filename']} (调度时间: {scheduled_at})")
+            
+            # 9. 更新项目扫描时间
             self.project_repo.update(project.id, {'last_scanned': datetime.utcnow()})
             
             self.logger.info(f"项目 '{project_name}' 扫描完成，创建了 {new_tasks_count} 个新任务")

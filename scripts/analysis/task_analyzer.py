@@ -306,7 +306,7 @@ class TaskAnalyzer:
     def generate_comprehensive_report(self, detailed: bool = True) -> Dict[str, Any]:
         """生成综合分析报告"""
         try:
-            with self.db_manager.get_session() as session:
+            with self.db_manager.get_session_context() as session:
                 report = {
                     'generated_at': datetime.now().isoformat(),
                     'basic_statistics': self.get_basic_statistics(session),

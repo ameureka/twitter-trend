@@ -20,7 +20,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from app.database.database import DatabaseManager
-from app.utils.config import ConfigManager
+from app.utils.enhanced_config import get_enhanced_config
 
 class APISettings(BaseSettings):
     """API配置设置"""
@@ -81,10 +81,9 @@ def get_db() -> Generator[Session, None, None]:
     finally:
         session.close()
 
-def get_config() -> ConfigManager:
+def get_config():
     """获取应用配置"""
-    settings = get_settings()
-    return ConfigManager(settings.config_file)
+    return get_enhanced_config()
 
 async def api_key_auth(x_api_key: str = Header(..., alias="X-API-Key")) -> str:
     """API密钥认证"""

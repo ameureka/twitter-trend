@@ -232,7 +232,7 @@ class TaskQueryManager:
     def get_comprehensive_summary(self) -> Dict[str, Any]:
         """获取综合摘要"""
         try:
-            with self.db_manager.get_session() as session:
+            with self.db_manager.get_session_context() as session:
                 summary = {
                     'total_tasks': self.get_task_count(session),
                     'status_distribution': self.get_tasks_by_status(session),
@@ -313,7 +313,7 @@ def main():
         
         elif args.task_id:
             # 查询特定任务
-            with query_manager.db_manager.get_session() as session:
+            with query_manager.db_manager.get_session_context() as session:
                 task_details = query_manager.get_task_details(session, args.task_id)
                 if task_details:
                     print(f"任务 {args.task_id} 详细信息:")
@@ -333,7 +333,7 @@ def main():
                 filters['priority'] = args.priority
             filters['limit'] = args.recent
             
-            with query_manager.db_manager.get_session() as session:
+            with query_manager.db_manager.get_session_context() as session:
                 if filters:
                     tasks = query_manager.search_tasks(session, **filters)
                 else:

@@ -179,6 +179,19 @@ class ProjectRepository:
         projects = query.order_by(Project.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
         
         return projects, total
+    
+    def get_active_projects(self) -> List[Project]:
+        """获取所有活跃项目"""
+        return self.session.query(Project).filter(Project.status == 'active').all()
+    
+    def get_active_projects_with_priority(self) -> List[Project]:
+        """获取所有活跃项目，按优先级排序"""
+        return self.session.query(Project).filter(
+            Project.status == 'active'
+        ).order_by(
+            Project.priority.desc().nullslast(),  # 优先级高的在前，NULL值在后
+            Project.created_at.asc()  # 创建时间早的在前
+        ).all()
 
 class ContentSourceRepository:
     """内容源数据访问层"""

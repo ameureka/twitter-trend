@@ -14,7 +14,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from app.utils.config import ConfigManager
+from app.utils.enhanced_config import get_enhanced_config
 from app.utils.config_validator import ConfigValidator
 from app.utils.logger import setup_logger, get_logger
 
@@ -67,7 +67,7 @@ def validate_configuration():
     logger = get_logger(__name__)
     
     try:
-        config = ConfigManager()
+        config = get_enhanced_config()
         validator = ConfigValidator()
         
         result = validator.validate_all()
@@ -102,9 +102,7 @@ def initialize_database():
     
     try:
         from app.database.database import DatabaseManager
-        from app.utils.config import get_config
-        
-        config = get_config()
+        config = get_enhanced_config()
         db_config = config.get_database_config()
         db_url = db_config['url']
         
@@ -115,7 +113,7 @@ def initialize_database():
         db_manager.create_tables()
         
         # 确保默认用户存在
-        with db_manager.get_session() as session:
+        with db_manager.get_session_context() as session:
             from app.database.repository import UserRepository
             user_repo = UserRepository(session)
             
@@ -166,9 +164,7 @@ def start_scheduler():
         from app.core.publisher import TwitterPublisher
         from app.core.content_generator import ContentGenerator
         from app.database.database import DatabaseManager
-        from app.utils.config import get_config
-        
-        config = get_config()
+        config = get_enhanced_config()
         db_config = config.get_database_config()
         db_url = db_config['url']
         
@@ -177,7 +173,7 @@ def start_scheduler():
         
         db_manager = DatabaseManager(db_url)
         
-        with db_manager.get_session() as session:
+        with db_manager.get_session_context() as session:
             # 初始化发布器和内容生成器
             import os
             publisher = TwitterPublisher(
@@ -238,9 +234,7 @@ def scan_projects():
     try:
         from app.core.project_manager import ProjectManager
         from app.database.database import DatabaseManager
-        from app.utils.config import get_config
-        
-        config = get_config()
+        config = get_enhanced_config()
         db_config = config.get_database_config()
         db_url = db_config['url']
         
@@ -249,7 +243,7 @@ def scan_projects():
         
         db_manager = DatabaseManager(db_url)
         
-        with db_manager.get_session() as session:
+        with db_manager.get_session_context() as session:
             project_base_path = config.get_project_path()
             project_manager = ProjectManager(session, project_base_path)
             

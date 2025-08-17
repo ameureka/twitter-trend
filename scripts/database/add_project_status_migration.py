@@ -15,7 +15,7 @@ sys.path.insert(0, str(project_root))
 
 from app.utils.logger import get_logger
 from app.database.database import DatabaseManager
-from app.utils.config import get_config
+from app.utils.enhanced_config import get_enhanced_config
 from sqlalchemy import text
 
 logger = get_logger(__name__)
@@ -24,7 +24,7 @@ def run_migration():
     """执行数据库迁移"""
     try:
         # 获取数据库配置
-        config = get_config()
+        config = get_enhanced_config()
         db_config = config.get_database_config()
         db_url = db_config['url']
         

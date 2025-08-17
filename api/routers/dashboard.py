@@ -149,8 +149,8 @@ def get_system_health(
         # 检查配置文件
         config_status = "healthy"
         try:
-            from app.utils.config import get_config
-            config = get_config()
+            from app.utils.enhanced_config import get_enhanced_config
+            config = get_enhanced_config()
             # 简化配置检查，避免复杂的依赖
             if not config.get_env('TWITTER_API_KEY'):
                 config_status = "warning"

@@ -69,7 +69,7 @@ class DatabaseResetManager:
         try:
             self.logger.info("开始清空数据库内容...")
             
-            session = self.db_manager.get_session()()
+            session = self.db_manager.get_session()
             try:
                 from app.database.models import (
                     PublishingTask, PublishingLog, ContentSource, 
@@ -111,7 +111,7 @@ class DatabaseResetManager:
     def ensure_admin_user(self) -> Dict[str, Any]:
         """确保管理员用户存在"""
         try:
-            session = self.db_manager.get_session()()
+            session = self.db_manager.get_session()
             try:
                 from app.database.models import User
                 
@@ -181,7 +181,7 @@ class DatabaseResetManager:
         try:
             self.logger.info("开始扫描项目并创建任务...")
             
-            session = self.db_manager.get_session()()
+            session = self.db_manager.get_session()
             try:
                 project_manager = ProjectManager(session, base_path, user_id=user_id)
                 
@@ -198,8 +198,8 @@ class DatabaseResetManager:
                     try:
                         self.logger.info(f"扫描项目: {project_name}")
                         
-                        # 扫描单个项目
-                        new_tasks_count = project_manager.scan_and_create_tasks(project_name, "en")
+                        # 扫描单个项目，设置较大的max_tasks_per_scan以创建更多任务
+                        new_tasks_count = project_manager.scan_and_create_tasks(project_name, "en", max_tasks_per_scan=100)
                         
                         scan_results['successful_projects'] += 1
                         scan_results['total_tasks_created'] += new_tasks_count

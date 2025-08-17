@@ -1,0 +1,622 @@
+# Claude Code 多 Agent 协同配置
+# Multi-Agent Orchestration for Legacy Code Analysis & Refactoring
+
+version: "2.1"
+name: "Legacy Code Analysis Multi-Agent System"
+
+# 全局配置
+global:
+  max_concurrent_agents: 3
+  timeout_per_agent: 3600s  # 60分钟 - 支持5倍深度分析
+  retry_attempts: 2
+  working_directory: "./workspace"
+  reports_directory: "./reports"
+  memory_system_root: "./memory"
+  model_strategy: "claude-opus-4"
+  fallback_model: "claude-sonnet-4"
+
+# 三层记忆体系
+memory_system:
+  global_memory: "~/.claude/CLAUDE.md"
+  project_memory: "./CLAUDE.md"
+  directory_memories:
+    - "./memory/frontend-memory.md"
+    - "./memory/backend-memory.md"
+    - "./memory/database-memory.md"
+    - "./memory/tests-memory.md"
+    - "./memory/logs-memory.md"
+
+# Agent 定义
+agents:
+  
+  # Agent 1: 代码分析、日志审查与记忆建立
+  legacy-code-analyzer:
+    id: "legacy-code-analyzer"
+    phase: 1
+    priority: "highest"
+    description: "Deep analysis of legacy codebase, logs review, and memory system establishment"
+    
+    # 核心任务配置
+    mission:
+      title: "🎯 Core Mission: Legacy Code Analysis & Logs Review"
+      objectives:
+        - "Deep analysis of legacy codebase (spaghetti code)"
+        - "Review historical logs to identify bugs and patterns"
+        - "Precisely locate and fix bugs" 
+        - "Refactor files when necessary"
+        - "Establish a complete project memory system"
+    
+    # 工作模式
+    working_mode:
+      analysis_mode: "Deep thinking mode (3x emphasis - maximum computational power usage)"
+      token_strategy: "Maximize token consumption, fully utilize context window"
+      model_strategy: "Prioritize Claude Opus, auto-downgrade when overloaded then upgrade back"
+      language_strategy: "Think internally in English, output in Chinese (unless technically required)"
+    
+    # 执行命令
+    command: "claude"
+    args:
+      - "--continue"
+      - "--model"
+      - "opus"
+      # 注意：目录路径将由orchestrator自动检测和添加
+      # 支持的目录模式: src/, app/, lib/, main/, components/, api/, scripts/, tests/, docs/, logs/
+      # 系统会自动扫描并添加存在的目录
+    
+    # 任务提示词
+    prompt: |
+      🎯 核心任务 - 遗留代码深度分析与日志审查
+      
+      我需要你作为世界顶级程序员，帮助我：
+      1. 深度分析遗留代码库（屎山代码）
+      2. 审查历史日志发现 Bug 模式
+      3. 精准定位并修复 Bug
+      4. 必要时进行文件重构
+      5. 建立完整的项目记忆体系
+
+      🧠 工作模式设置
+      * **分析模式**: 深度思考模式（3次强调 - 最大算力使用）
+      * **Token 策略**: 最大化 Token 消耗，充分利用上下文窗口
+      * **模型策略**: 优先使用 Claude Opus，过载时自动降级后回升
+      * **语言策略**: 内部用英文思考，对外输出中文（除非技术必需）
+
+      ⚡ 核心能力确认
+      * ✅ 大规模上下文处理能力
+      * ✅ 高效缓存创建/读取机制
+      * ✅ 无限制 Token 预算支持
+      * ✅ 智能模型切换策略
+      * ✅ 简化复杂问题的能力
+
+      📚 三层记忆体系构建
+      请按以下结构创建完整记忆系统：
+
+      第一层：全局记忆
+      * **文件**: `~/.claude/CLAUDE.md`
+      * **用途**: 跨项目通用知识和经验积累
+
+      第二层：项目记忆  
+      * **文件**: `./CLAUDE.md`
+      * **用途**: 当前项目整体架构、技术栈、关键信息
+
+      第三层：目录记忆
+      * **文件**: 各模块/目录专用记忆文件
+      * **用途**: 细粒度的代码结构、功能说明、已知问题
+
+      🔍 执行流程
+      1. **项目探索阶段**: 
+         - 分析项目文件结构
+         - 识别技术栈和架构模式（Python/Node.js/Java等）
+         - 建立代码地图
+         - **重点：审查 ./logs 文件夹下的所有日志文件**
+
+      2. **日志审查分析**（新增重点任务）:
+         - 逐一审查 ./logs 目录下的所有日志文件
+         - 识别错误模式、异常堆栈、性能问题
+         - 分析日志中的 Bug 迹象和系统故障
+         - 总结历史问题趋势和根因分析
+         - 将日志发现的问题与代码分析结果关联
+
+      3. **记忆体系建立**:
+         - 创建三层记忆文档
+         - 记录关键发现和洞察
+         - 特别记录从日志中发现的问题模式
+
+      4. **深度代码分析**:
+         - 系统性扫描潜在 Bug 和漏洞
+         - 分析易错模式和边界情况
+         - 识别性能瓶颈和内存泄漏
+         - 按严重程度分类记录关键问题
+
+      5. **重构机会识别**:
+         - 识别需要立即重构的文件
+         - 建议架构改进
+         - 规划模块化和代码组织策略
+         - 按影响和工作量优先排序重构任务
+
+      ⚠️ **关键分析要点**（新增）:
+      
+      **严重问题识别**:
+      - 🚨 **路径硬编码问题**: 检查代码中的硬编码路径，确保跨平台兼容性
+      - 🚨 **平台兼容性**: 验证脚本在 macOS、Linux、Windows 上的运行兼容性
+      - 🚨 **工程代码风格**: 分析项目是否符合对应语言的工程标准（如 Python PEP8、Node.js 标准等）
+      - 🚨 **文件重复问题**: 识别重复的工程文件和冗余代码
+
+      **中等问题识别**:
+      - ⚠️ **日志配置**: 检查日志配置是否合理，日志级别设置是否恰当
+      - ⚠️ **配置管理**: 验证配置文件的合理性和安全性
+      - ⚠️ **错误处理**: 分析错误处理机制是否完善
+      - ⚠️ **数据库并发**: 识别数据库并发访问和锁机制问题
+
+      **分析输出要求**:
+      - 按问题严重程度分类记录所有发现
+      - 为每个问题提供具体的文件路径和行号
+      - 提供详细的修复建议和最佳实践
+      - 确保记录的问题真实存在且有明确证据
+
+      🚀 开始指令
+      现在开始执行项目分析。请首先探索当前目录结构，**特别重点审查 ./logs 文件夹和跨平台兼容性问题**，理解项目类型，然后建立记忆体系。
+
+      **Status**: 🟢 Ready to analyze legacy codebase with enhanced focus
+      **Mode**: 💪 Maximum computational power engaged  
+      **Output**: 📝 Chinese documentation with technical precision
+      **Special Focus**: 🔍 Cross-platform compatibility & engineering standards
+    
+    # 输出文件
+    outputs:
+      - "./reports/legacy-analysis-report.md"
+      - "./reports/bug-inventory.md" 
+      - "./reports/refactoring-plan.md"
+      - "./reports/logs-analysis-report.md"  # 新增：日志分析专门报告
+      - "~/.claude/CLAUDE.md"
+      - "./CLAUDE.md"
+      - "./memory/frontend-memory.md"
+      - "./memory/backend-memory.md"
+      - "./memory/database-memory.md"
+      - "./memory/tests-memory.md"
+      - "./memory/logs-memory.md"  # 新增：日志相关记忆
+    
+    # 依赖关系
+    dependencies: []
+    
+    # 完成条件
+    completion_criteria:
+      - "All memory files created and populated"
+      - "Legacy analysis report generated"
+      - "Bug inventory documented"
+      - "Refactoring plan established"
+    
+    timeout: 3600s  # 60分钟 - Phase 1 深度分析
+
+  # Agent 2: 任务执行与实现
+  task-executor:
+    id: "task-executor"
+    phase: 2
+    priority: "high"
+    description: "Deep implementation of identified tasks and todo list execution"
+    
+    # 核心任务配置
+    mission:
+      title: "🎯 任务执行命令：Todo 清单深度实现"
+      objectives:
+        - "执行所有已识别的重构任务"
+        - "实施深度分析的 Bug 修复"
+        - "应用架构改进"
+        - "更新记忆系统变更"
+    
+    # 工作模式
+    working_mode:
+      thinking_mode: "Deep thinking mode (triple emphasis) - maximum computational power release"
+      token_strategy: "Unlimited token consumption, fully utilize maximum context window"
+      model_management: "Claude Opus priority, intelligent downgrade when overloaded then auto-upgrade back"
+      output_language: "Internal English thinking, final Chinese output (except technical terms)"
+    
+    # 执行命令
+    command: "claude"
+    args:
+      - "--continue"
+      - "--model"
+      - "opus"
+      - "--add-dir"
+      - "./app"
+      - "--add-dir"
+      - "./api"
+      - "--add-dir"
+      - "./scripts"
+      - "--add-dir"
+      - "./tests"
+      - "--add-dir"
+      - "./logs"
+      - "--add-dir"
+      - "./reports"
+      - "--add-dir"
+      - "./memory"
+    
+    # 任务提示词
+    prompt: |
+      🎯 任务执行指令：Todo 清单深度实现
+
+      ## 🧠 执行模式配置
+      - **思维模式**: 深度思考模式（三重强调）- 最大算力释放
+      - **Token 策略**: 无限制 Token 消耗，充分利用最大上下文窗口
+      - **模型管理**: Claude Opus 优先，过载时智能降级后自动回升
+      - **输出语言**: 内部英文思考，最终中文输出（技术术语除外）
+
+      ## ⚡ 核心能力确认
+      - ✅ **世界级上下文处理能力** - 超大规模信息整合
+      - ✅ **顶级缓存系统** - 创建/读取缓存世界最强
+      - ✅ **无与伦比的 Token 处理** - 输入输出 Token 处理能力极限释放
+      - ✅ **智能模型切换** - 自动负载均衡，确保最优性能
+      - ✅ **简化复杂问题** - 化繁为简，高效执行
+
+      ## 🚀 执行指令
+      现在开始执行 Todo 清单中的所有任务。请：
+
+      1. **深度分析每个任务** - 运用最大算力进行思考
+         - 审查第一阶段的分析结果
+         - 运用最大算力进行实施规划
+         - 考虑技术约束和依赖关系
+         - 优化实施策略
+
+      2. **制定最优执行策略** - 考虑依赖关系和优先级
+         - 按影响和依赖关系排序任务
+         - 规划实施序列
+         - 识别资源需求
+         - 建立质量检查点
+
+      3. **逐项完成任务** - 确保每个细节都经过深度思考
+         - 实施带有详尽测试的 Bug 修复
+         - 执行带有安全检查的重构
+         - 逐步应用架构改进
+         - 确保每个细节都经过深度思考
+
+      4. **生成完整报告** - 详细记录执行过程和结果
+         - 记录实施过程和决策
+         - 记录所做的更改及其理由
+         - 用新信息更新记忆系统
+         - 准备移交文档
+
+      5. **提供后续建议** - 基于执行情况给出优化建议
+
+      ⚠️ **最小化修改原则**（关键要求）:
+      
+      **修改策略**:
+      - 🎯 **最小化影响**: 每次修改只影响单一模块或文件，避免连锁反应
+      - 🎯 **解耦设计**: 确保修改的模块与其他模块保持松耦合
+      - 🎯 **向后兼容**: 所有修改必须保持向后兼容性
+      - 🎯 **增量修改**: 采用增量式修改，而非大规模重构
+
+      **严格约束**:
+      - 🚫 **禁止大规模重构**: 不允许大范围修改架构或重新组织代码结构
+      - 🚫 **禁止破坏性变更**: 不允许修改公共接口或改变模块间的调用关系
+      - 🚫 **禁止复杂依赖**: 不引入新的复杂依赖关系
+      - 🚫 **禁止过度设计**: 避免为了"完美"而进行不必要的复杂化
+
+      **修改验证**:
+      - ✅ 每个修改前先评估影响范围
+      - ✅ 确保修改不影响其他模块的功能
+      - ✅ 验证修改的向后兼容性
+      - ✅ 记录修改的最小化证明
+
+      **实施原则**:
+      - 📌 **单点修改**: 一次只修改一个问题点
+      - 📌 **局部优化**: 在不影响整体结构的前提下进行局部优化
+      - 📌 **渐进改进**: 通过多次小修改达到改进目标
+      - 📌 **风险控制**: 每次修改的风险可控且可回滚
+
+      **执行原则**: 
+      - 🧠 启用最大思维深度
+      - 💪 释放全部计算潜能
+      - 🎯 确保任务完美完成
+      - 📝 详细记录执行过程
+      - 🔒 **严格遵循最小化修改原则**
+
+      **输入依赖**: 第一阶段的内存文件和分析报告
+      **输出要求**: 最小化修改的代码更新、详细的修改影响分析报告
+
+      **状态**: 🟢 已准备好执行 Todo 清单（最小化修改模式）
+      **模式**: 💎 最强程序员模式已激活（约束修改范围）
+      **期待**: 🏆 世界级任务执行表现（最小影响）
+
+      请开始执行 Todo 清单中的任务，严格遵循最小化修改原则。
+    
+    # 输入依赖
+    inputs:
+      - "./reports/legacy-analysis-report.md"
+      - "./reports/bug-inventory.md"
+      - "./reports/refactoring-plan.md"
+      - "./CLAUDE.md"
+      - "./memory/*.md"
+    
+    # 输出文件
+    outputs:
+      - "./reports/implementation-report.md"
+      - "./reports/changes-log.md"
+      - "./todo.md"
+      - "./问题解析.md"
+      - "updated codebase files"
+    
+    # 依赖关系
+    dependencies:
+      - "legacy-code-analyzer"
+    
+    # 完成条件
+    completion_criteria:
+      - "All critical bugs fixed"
+      - "Priority refactoring tasks completed"
+      - "Implementation report generated"
+      - "Memory system updated"
+    
+    timeout: 5400s  # 90分钟 - Phase 2 任务执行和代码修改
+
+  # Agent 3: 综合测试与验证
+  comprehensive-tester:
+    id: "comprehensive-tester"
+    phase: 3
+    priority: "high"
+    description: "Comprehensive testing of all modifications and quality assurance"
+    
+    # 核心任务配置
+    mission:
+      title: "🎯 综合测试任务：修改后验证"
+      objectives:
+        - "验证所有实施的更改"
+        - "执行多维度测试"
+        - "确保质量和可靠性"
+        - "生成测试报告和建议"
+    
+    # 工作模式  
+    working_mode:
+      analysis_mode: "Deep thinking mode (triple emphasis) - maximum computational power engagement"
+      token_strategy: "Unlimited token consumption, fully leverage maximum context window"
+      model_management: "Claude Opus priority, intelligent downgrade when overloaded then auto-return"
+      output_language: "Internal English thinking, final Chinese output (except technical necessities)"
+    
+    # 执行命令
+    command: "claude"
+    args:
+      - "--continue"
+      - "--model"
+      - "opus"
+      - "--add-dir"
+      - "./app"
+      - "--add-dir"
+      - "./tests"
+      - "--add-dir"
+      - "./reports"
+      - "--add-dir"
+      - "./logs"
+    
+    # 任务提示词
+    prompt: |
+      🎯 综合测试任务：修改后验证
+
+      ## 🧠 测试模式配置
+      - **分析模式**: 深度思考模式（三重强调）- 最大算力投入
+      - **Token 策略**: 无限制 Token 消耗，充分利用最大上下文窗口
+      - **模型管理**: Claude Opus 优先，过载时智能降级后自动回归
+      - **输出语言**: 内部英文思考，最终中文输出（技术必需部分除外）
+
+      ## ⚡ 核心能力确认
+      - ✅ **世界级上下文处理能力** - 超大规模信息整合
+      - ✅ **顶级缓存系统** - 缓存创建/读取世界最强
+      - ✅ **无与伦比的 Token 处理** - 输入/输出 Token 处理达到极限
+      - ✅ **智能模型切换** - 自动负载均衡，确保最优性能
+      - ✅ **复杂性简化掌控** - 化繁为简，高效执行
+
+      ## 🧪 测试策略框架
+
+      ### 第一阶段：测试环境搭建
+      - **MCP 工具集成**: 利用适当的 MCP 服务器进行测试自动化
+      - **Web 界面测试**: 基于浏览器的功能和 UI 测试
+      - **脚本化测试**: 自动化测试脚本和验证
+      - **多模态验证**: 各种测试方法确保全面覆盖
+
+      ### 第二阶段：测试方法论
+      1. **单元测试** - 单个组件验证
+      2. **集成测试** - 组件交互验证
+      3. **系统测试** - 端到端功能验证
+      4. **性能测试** - 负载和压力测试
+      5. **安全测试** - 漏洞评估
+      6. **用户体验测试** - 可用性和可访问性验证
+
+      ## 🚀 执行指令
+      现在开始对所有修改过的项目进行综合测试。请：
+
+      1. **深度分析修改范围** - 运用最大算力理解变更内容
+         - 运用最大算力理解所有变更
+         - 分析修改的影响范围和风险点
+         - 识别需要重点测试的关键路径
+
+      2. **设计最优测试策略** - 考虑所有修改组件及其相互依赖关系
+         - 考虑所有修改组件及其相互依赖关系
+         - 制定全面的测试覆盖计划
+         - 确定测试优先级和关键验证点
+
+      3. **执行多维度测试** - 使用 MCP 工具、Web 界面、脚本和其他适当方法
+         - 使用 MCP 工具、Web 界面、脚本和其他适当方法
+         - 执行自动化和手动测试相结合
+         - 验证功能正确性和性能指标
+
+      4. **生成详细测试报告** - 记录所有发现、问题和验证结果
+         - 记录所有发现、问题和验证结果
+         - 提供详细的测试覆盖率分析
+         - 标识剩余风险和改进建议
+
+      5. **提供质量保证建议** - 基于测试结果提出改进建议
+
+      ⚠️ **真实配置文件测试原则**（关键要求）:
+      
+      **配置文件策略**:
+      - 📋 **使用真实配置**: 优先使用项目中的真实配置文件进行测试
+      - 📋 **避免模拟数据**: 尽量避免使用模拟或虚假的配置数据
+      - 📋 **环境一致性**: 确保测试环境与生产环境配置保持一致
+      - 📋 **配置验证**: 验证所有配置文件的有效性和完整性
+
+      **真实配置识别**:
+      - 🔍 自动扫描项目中的配置文件（config.json, .env, settings.py 等）
+      - 🔍 识别数据库连接配置、API 端点配置、日志配置等
+      - 🔍 验证配置文件的格式和必需字段
+      - 🔍 检查配置文件的访问权限和安全性
+
+      **测试配置管理**:
+      - ⚙️ **备份原配置**: 在测试前备份所有原始配置文件
+      - ⚙️ **安全测试**: 使用脱敏的真实配置进行安全测试
+      - ⚙️ **回滚机制**: 确保测试后能完全恢复原始配置
+      - ⚙️ **配置隔离**: 在测试环境中隔离敏感配置信息
+
+      **配置文件类型覆盖**:
+      - 📄 应用配置文件（app.config, settings.json）
+      - 📄 数据库配置文件（database.yml, db.config）
+      - 📄 环境变量文件（.env, environment.yml）
+      - 📄 服务配置文件（nginx.conf, apache.conf）
+      - 📄 日志配置文件（log4j.properties, logging.conf）
+
+      **测试验证要求**:
+      - ✅ 验证配置文件加载是否正常
+      - ✅ 测试配置参数是否生效
+      - ✅ 检查配置更改的影响范围
+      - ✅ 验证配置文件的错误处理机制
+
+      **测试原则**:
+      - 🧠 启用最大分析深度
+      - 💪 部署全部计算武器库
+      - 🎯 确保修改完全验证
+      - 📊 全面结果文档记录
+      - 🔍 不遗漏任何组件测试
+      - 📋 **严格使用真实配置文件**
+
+      **输入依赖**: 第二阶段的实施报告和修改后的代码库
+      **输出要求**: 基于真实配置的综合测试报告和质量建议
+
+      **状态**: 🟢 准备执行综合测试（真实配置模式）
+      **模式**: 💎 精英测试工程师模式已激活（真实配置优先）
+      **期待**: 🏆 世界级测试性能和验证（真实环境）
+
+      请开始使用真实配置文件对所有修改过的项目组件进行综合测试。
+    
+    # MCP 工具配置
+    mcp_tools:
+      - "playwright"  # Web testing
+      - "jest-runner" # Unit testing
+      - "lighthouse"  # Performance testing
+      - "security-scanner" # Security testing
+    
+    # 输入依赖
+    inputs:
+      - "./reports/implementation-report.md"
+      - "./reports/changes-log.md"
+      - "modified codebase"
+      - "./memory/*.md"
+    
+    # 输出文件
+    outputs:
+      - "./reports/comprehensive-test-report.md"
+      - "./reports/quality-assurance-report.md"
+      - "./reports/security-assessment.md"
+      - "./reports/performance-analysis.md"
+      - "./reports/final-recommendations.md"
+    
+    # 依赖关系
+    dependencies:
+      - "task-executor"
+    
+    # 完成条件
+    completion_criteria:
+      - "All testing phases completed"
+      - "Test coverage meets requirements"
+      - "Quality gates passed"
+      - "Final recommendations provided"
+    
+    timeout: 2700s  # 45分钟 - Phase 3 综合测试
+
+# 执行策略配置
+execution_strategies:
+  
+  # 顺序执行策略（推荐）
+  sequential_execution:
+    name: "Sequential Multi-Agent Execution"
+    description: "Execute agents in dependency order with validation gates"
+    mode: "sequential"
+    agents:
+      - phase: 1
+        agent: "legacy-code-analyzer"
+        validation_required: true
+      - phase: 2
+        agent: "task-executor" 
+        validation_required: true
+      - phase: 3
+        agent: "comprehensive-tester"
+        validation_required: true
+    
+    # 阶段间验证
+    inter_phase_validation:
+      enabled: true
+      validation_timeout: 300s
+      required_outputs_check: true
+      memory_system_validation: true
+  
+  # 并行执行策略（高级）
+  parallel_execution:
+    name: "Optimized Parallel Execution"
+    description: "Execute compatible phases in parallel where possible"
+    mode: "hybrid"
+    phases:
+      - phase: 1
+        agents: ["legacy-code-analyzer"]
+        mode: "sequential"
+      - phase: 2
+        agents: ["task-executor"]
+        mode: "sequential"
+        depends_on: [1]
+      - phase: 3
+        agents: ["comprehensive-tester"]
+        mode: "sequential"
+        depends_on: [2]
+
+# 监控和报告
+monitoring:
+  enable_real_time_monitoring: true
+  progress_reporting_interval: 300s  # 5分钟
+  agent_health_checks: true
+  automatic_failover: true
+  
+  notifications:
+    phase_completion: true
+    error_alerts: true
+    final_report: true
+  
+  logging:
+    level: "detailed"
+    include_performance_metrics: true
+    include_token_usage: true
+    include_model_switching_events: true
+
+# 错误处理和恢复
+error_handling:
+  retry_strategy: "exponential_backoff"
+  max_retries_per_agent: 3
+  failover_to_lower_model: true
+  partial_execution_recovery: true
+  checkpoint_system: true
+  
+  recovery_procedures:
+    memory_corruption: "restore_from_checkpoint"
+    agent_timeout: "restart_with_reduced_scope"
+    model_overload: "switch_to_fallback_model"
+
+# 质量保证
+quality_gates:
+  memory_system_validation:
+    required_files_check: true
+    content_quality_assessment: true
+    cross_reference_validation: true
+  
+  implementation_validation:
+    code_quality_check: true
+    test_coverage_requirement: 80
+    security_scan_required: true
+  
+  testing_validation:
+    comprehensive_coverage_required: true
+    performance_regression_check: true
+    security_vulnerability_scan: true

@@ -1,0 +1,67 @@
+{
+  "executionSummary": {
+    "status": "SUCCESS",
+    "totalDuration": 10190,
+    "completedPhases": [
+      "legacy-code-analyzer",
+      "task-executor",
+      "comprehensive-tester"
+    ],
+    "startTime": "2025-08-17T02:17:28.705Z",
+    "endTime": "2025-08-17T02:17:38.895Z",
+    "platform": "darwin",
+    "projectType": "Node.js"
+  },
+  "agentResults": [
+    {
+      "agentId": "legacy-code-analyzer",
+      "success": false,
+      "duration": 2929,
+      "error": "Claude 命令执行失败，退出代码: 1\n",
+      "timestamp": "2025-08-17T02:17:31.636Z"
+    },
+    {
+      "agentId": "task-executor",
+      "success": false,
+      "duration": 2296,
+      "error": "Claude 命令执行失败，退出代码: 1\n",
+      "timestamp": "2025-08-17T02:17:33.935Z"
+    },
+    {
+      "agentId": "comprehensive-tester",
+      "success": false,
+      "duration": 4953,
+      "error": "Claude 命令执行失败，退出代码: 1\n",
+      "timestamp": "2025-08-17T02:17:38.892Z"
+    }
+  ],
+  "systemInfo": {
+    "configVersion": "2.1",
+    "systemName": "Legacy Code Analysis Multi-Agent System",
+    "nodeVersion": "v22.14.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "memory": "36.0GB",
+    "cpus": 12
+  },
+  "discoveredConfigs": [
+    {
+      "file": ".env",
+      "size": 888,
+      "modified": "2025-08-13T10:31:30.467Z",
+      "type": "环境变量"
+    },
+    {
+      "file": "docker-compose.yml",
+      "size": 911,
+      "modified": "2025-08-02T17:39:32.611Z",
+      "type": "容器配置"
+    },
+    {
+      "file": "Dockerfile",
+      "size": 731,
+      "modified": "2025-08-02T17:40:14.800Z",
+      "type": "容器配置"
+    }
+  ]
+}

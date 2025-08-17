@@ -16,7 +16,8 @@ import asyncio
 import os
 import time
 import random
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import signal
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Callable
 from dataclasses import dataclass
@@ -26,6 +27,7 @@ from queue import PriorityQueue, Empty
 
 from app.core.content_generator import ContentGenerator
 from app.core.publisher import TwitterPublisher
+from app.core.global_task_creator import GlobalTaskCreator
 from app.database.repository import (
     ContentSourceRepository,
     ProjectRepository,
@@ -34,10 +36,17 @@ from app.database.repository import (
 )
 from app.database.models import PublishingTask
 from app.utils.logger import get_logger
-from app.utils.config import get_config
+from app.utils.enhanced_config import get_enhanced_config
 from app.utils.path_manager import get_path_manager
+from app.utils.dynamic_path_manager import get_dynamic_path_manager
 from app.utils.performance_monitor import PerformanceMonitor
 from app.utils.retry_handler import ErrorHandler
+from app.utils.error_classifier import error_classifier, classify_and_handle_error
+from app.utils.priority_calculator import priority_calculator, calculate_task_priority, get_priority_level
+from app.utils.optimal_timing_predictor import optimal_timing_predictor, predict_best_publish_time
+from app.utils.stuck_task_recovery import stuck_task_recovery_manager, detect_and_recover_stuck_tasks
+from app.utils.database_lock_manager import get_database_lock_manager, execute_with_lock_protection
+from app.utils.data_integrity_checker import get_data_integrity_checker, perform_integrity_check
 
 logger = get_logger(__name__)
 
@@ -80,8 +89,9 @@ class EnhancedTaskScheduler:
     """增强型任务调度器"""
     
     def __init__(self, db_manager=None, content_generator=None, publisher=None):
-        self.config = get_config()
+        self.config = get_enhanced_config()
         self.path_manager = get_path_manager()
+        self.dynamic_path_manager = get_dynamic_path_manager()
         
         # 如果提供了数据库管理器，使用它来获取session
         if db_manager:
@@ -108,13 +118,50 @@ class EnhancedTaskScheduler:
         self.performance_monitor = PerformanceMonitor()
         self.error_handler = ErrorHandler()
         
+        # 🎯 Phase 3: 集成智能错误分类器
+        self.error_classifier = error_classifier
+        logger.info("✅ 智能错误分类器已集成到调度器")
+        
+        # 🎯 Phase 3.4: 集成优先级权重算法
+        self.priority_calculator = priority_calculator
+        logger.info("✅ 优先级权重算法已集成到调度器")
+        
+        # 📅 Phase 3.5: 集成最佳发布时间预测器
+        self.timing_predictor = optimal_timing_predictor
+        logger.info("✅ 最佳发布时间预测器已集成到调度器")
+        
+        # 🛡️ Phase 4.1: 集成卡住任务自动恢复管理器
+        self.stuck_recovery_manager = stuck_task_recovery_manager
+        logger.info("✅ 卡住任务自动恢复管理器已集成到调度器")
+        
+        # 🔒 Phase 4.2: 集成数据库锁管理器
+        db_path = self.config.get('database', {}).get('path', './data/twitter_publisher.db')
+        self.lock_manager = get_database_lock_manager(db_path)
+        logger.info("✅ 数据库锁管理器已集成到调度器")
+        
+        # 🔍 Phase 4.3: 集成数据完整性检查器
+        self.integrity_checker = get_data_integrity_checker(db_path)
+        logger.info("✅ 数据完整性检查器已集成到调度器")
+        
+        # 初始化全局任务创建器
+        self.global_task_creator = GlobalTaskCreator(self.db_manager)
+        
         # 调度器配置
-        scheduler_config = self.config.get('scheduler', {})
-        self.max_workers = scheduler_config.get('max_workers', 3)
-        self.batch_size = scheduler_config.get('batch_size', 5)
-        self.check_interval = scheduler_config.get('check_interval', 30)
+        scheduler_config = self.config.get('scheduling', {})
+        self.max_workers = scheduler_config.get('max_workers', 5)
+        self.batch_size = scheduler_config.get('batch_size', 3)
+        self.check_interval = scheduler_config.get('check_interval', 60)
         self.max_retries = scheduler_config.get('max_retries', 3)
         self.stuck_task_timeout = scheduler_config.get('stuck_task_timeout', 300)
+        
+        # ⏰ Phase 3.3: 任务超时保护配置
+        self.task_timeout_minutes = scheduler_config.get('task_timeout_minutes', 5)
+        self.task_timeout_seconds = self.task_timeout_minutes * 60
+        logger.info(f"⏰ 任务超时保护已启用: {self.task_timeout_minutes} 分钟")
+        
+        # 每日任务数量配置
+        self.daily_min_tasks = scheduler_config.get('daily_min_tasks', 5)
+        self.daily_max_tasks = scheduler_config.get('daily_max_tasks', 6)
         
         # 运行状态
         self.is_running = False
@@ -157,6 +204,9 @@ class EnhancedTaskScheduler:
             # 启动监控线程
             threading.Thread(target=self._monitor_loop, daemon=True).start()
             
+            # 🛡️ Phase 4.1: 启动卡住任务恢复监控
+            self.stuck_recovery_manager.start_monitoring(self.db_manager)
+            
             logger.info(f"增强型任务调度器启动成功，最大工作线程: {self.max_workers}")
             
             return {
@@ -192,6 +242,9 @@ class EnhancedTaskScheduler:
             
         try:
             self.is_running = False
+            
+            # 🛡️ Phase 4.1: 停止卡住任务恢复监控
+            self.stuck_recovery_manager.stop_monitoring()
             
             # 等待正在执行的任务完成
             if self.executor:
@@ -319,9 +372,21 @@ class EnhancedTaskScheduler:
                 # 检查卡住的任务
                 self._check_stuck_tasks()
                 
-                # 自动调度新任务
+                # 自动调度新任务 - 使用全局任务创建器
                 if self.task_queue.qsize() < self.batch_size:
-                    self.schedule_batch()
+                    try:
+                        # 使用全局任务创建器创建每日任务
+                        result = self.global_task_creator.create_daily_tasks()
+                        if result.get('success'):
+                            logger.info(f"全局任务创建器创建了 {result.get('created_count', 0)} 个任务")
+                            # 调度新创建的任务
+                            self.schedule_batch()
+                        else:
+                            logger.warning(f"全局任务创建器未创建新任务: {result.get('message', '未知原因')}")
+                    except Exception as e:
+                        logger.error(f"全局任务创建器执行失败: {e}", exc_info=True)
+                        # 如果全局任务创建器失败，回退到原有的调度方式
+                        self.schedule_batch()
                     
                 time.sleep(self.check_interval)
                 
@@ -332,8 +397,11 @@ class EnhancedTaskScheduler:
         logger.info("调度器主循环结束")
         
     def _process_task_queue(self):
-        """处理任务队列"""
+        """⏰ Phase 3.3: 处理任务队列（包含超时保护）"""
         available_workers = self.max_workers - len(self.running_tasks)
+        
+        # 检查运行中任务的超时情况
+        self._check_task_timeouts()
         
         for _ in range(min(available_workers, self.task_queue.qsize())):
             try:
@@ -346,20 +414,109 @@ class EnhancedTaskScheduler:
                     self.task_queue.put(task_execution)
                     break
                     
-                # 提交任务执行
-                future = self.executor.submit(self._execute_task, task_execution)
+                # 提交任务执行（带超时保护）
+                future = self.executor.submit(self._execute_task_with_timeout, task_execution)
                 
                 with self.lock:
                     self.running_tasks[task_execution.task_id] = {
                         'future': future,
                         'start_time': datetime.now(),
-                        'task_execution': task_execution
+                        'task_execution': task_execution,
+                        'timeout_seconds': self.task_timeout_seconds
                     }
                     
             except Empty:
                 break
             except Exception as e:
                 logger.error(f"处理任务队列异常: {e}")
+    
+    def _check_task_timeouts(self):
+        """⏰ 检查任务超时情况"""
+        current_time = datetime.now()
+        timed_out_tasks = []
+        
+        with self.lock:
+            for task_id, task_info in self.running_tasks.items():
+                start_time = task_info['start_time']
+                timeout_seconds = task_info.get('timeout_seconds', self.task_timeout_seconds)
+                
+                elapsed_time = (current_time - start_time).total_seconds()
+                
+                if elapsed_time > timeout_seconds:
+                    logger.warning(f"⏰ 任务 {task_id} 执行超时: {elapsed_time:.1f}s > {timeout_seconds}s")
+                    timed_out_tasks.append((task_id, task_info))
+                    
+        # 处理超时任务
+        for task_id, task_info in timed_out_tasks:
+            self._handle_task_timeout(task_id, task_info)
+    
+    def _handle_task_timeout(self, task_id: int, task_info: Dict[str, Any]):
+        """⏰ 处理任务超时"""
+        try:
+            future = task_info['future']
+            task_execution = task_info['task_execution']
+            elapsed_time = (datetime.now() - task_info['start_time']).total_seconds()
+            
+            logger.error(f"⏰ 强制取消超时任务 {task_id} (运行时间: {elapsed_time:.1f}s)")
+            
+            # 尝试取消任务
+            future.cancel()
+            
+            # 从运行任务列表中移除
+            with self.lock:
+                self.running_tasks.pop(task_id, None)
+                
+            # 创建超时错误消息
+            timeout_error = f"任务执行超时 ({elapsed_time:.1f}s > {self.task_timeout_seconds}s)"
+            
+            # 使用错误分类器处理超时错误
+            session = self.db_manager.get_session()
+            try:
+                task_repo = PublishingTaskRepository(session)
+                log_repo = PublishingLogRepository(session)
+                
+                # 处理超时失败
+                self._handle_task_failure(task_execution, timeout_error, task_repo, log_repo)
+                session.commit()
+                
+            except Exception as db_error:
+                logger.error(f"处理超时任务数据库操作失败: {db_error}")
+                session.rollback()
+            finally:
+                self.db_manager.remove_session()
+                
+        except Exception as e:
+            logger.error(f"处理任务超时异常: {e}")
+    
+    def _execute_task_with_timeout(self, task_execution: TaskExecution) -> Dict[str, Any]:
+        """⏰ 带超时保护的任务执行包装器"""
+        task_id = task_execution.task_id
+        
+        try:
+            # 使用超时执行任务
+            logger.info(f"⏰ 开始执行任务 {task_id} (超时限制: {self.task_timeout_seconds}s)")
+            result = self._execute_task(task_execution)
+            
+            # 清理运行状态
+            with self.lock:
+                self.running_tasks.pop(task_id, None)
+                
+            return result
+            
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"⏰ 任务 {task_id} 执行异常: {error_msg}")
+            
+            # 清理运行状态
+            with self.lock:
+                self.running_tasks.pop(task_id, None)
+                
+            return {
+                'success': False,
+                'task_id': task_id,
+                'error': error_msg,
+                'timeout_protected': True
+            }
                 
     def _execute_task(self, task_execution: TaskExecution, task_repo: PublishingTaskRepository, 
                       log_repo: PublishingLogRepository, content_source_repo: ContentSourceRepository) -> Dict[str, Any]:
@@ -406,17 +563,54 @@ class EnhancedTaskScheduler:
                 logger.error(f"[SCHEDULER_DEBUG] 内容源 {task.source_id} 不存在")
                 raise ValueError(f"内容源 {task.source_id} 不存在")
             
-            # 构造元数据文件路径
+            # 使用动态路径管理器处理媒体文件路径
             import os
             logger.info(f"[SCHEDULER_DEBUG] 原始媒体路径: {task.media_path}")
-            # 使用路径管理器标准化媒体文件路径
-            media_file_path = self.path_manager.normalize_path(task.media_path)
-            media_file = str(media_file_path)
-            logger.info(f"[SCHEDULER_DEBUG] 标准化后媒体路径: {media_file}")
             
-            if not media_file_path.exists():
-                logger.error(f"[SCHEDULER_DEBUG] 媒体文件不存在: {media_file} (原路径: {task.media_path})")
-                raise FileNotFoundError(f"媒体文件不存在: {media_file} (原路径: {task.media_path})")
+            # 验证媒体文件
+            validation_result = self.dynamic_path_manager.validate_media_file(task.media_path)
+            logger.info(f"[SCHEDULER_DEBUG] 媒体文件验证结果: {validation_result}")
+            
+            if validation_result['is_hardcoded']:
+                logger.warning(f"[SCHEDULER_DEBUG] 检测到硬编码路径: {task.media_path}")
+                logger.info(f"[SCHEDULER_DEBUG] 转换为相对路径: {validation_result['converted_path']}")
+            
+            if not validation_result['exists']:
+                error_msg = f"媒体文件不存在: {validation_result['resolved_path']} (原路径: {task.media_path})"
+                if validation_result['error']:
+                    error_msg += f", 错误: {validation_result['error']}"
+                
+                logger.error(f"[SCHEDULER_DEBUG] {error_msg}")
+                
+                # 尝试通过文件名查找媒体文件
+                filename = os.path.basename(task.media_path)
+                found_file = self.dynamic_path_manager.find_media_file(filename)
+                
+                if found_file:
+                    logger.info(f"[SCHEDULER_DEBUG] 通过文件名找到媒体文件: {found_file}")
+                    media_file_path = found_file
+                    media_file = str(media_file_path)
+                else:
+                    # 立即停止任务流程并记录为失败
+                    task_repo.update(task_id, {
+                        'status': TaskStatus.FAILED.value,
+                        'updated_at': datetime.now()
+                    })
+                    
+                    # 记录失败日志
+                    log_repo.create_log(
+                        task_id=task_id,
+                        status="failed",
+                        error_message=error_msg,
+                        duration_seconds=time.time() - start_time
+                    )
+                    
+                    raise FileNotFoundError(error_msg)
+            else:
+                # 使用验证通过的路径
+                media_file_path = self.dynamic_path_manager.resolve_media_path(task.media_path)
+                media_file = str(media_file_path)
+                logger.info(f"[SCHEDULER_DEBUG] 解析后媒体路径: {media_file}")
             
             # 查找对应的JSON元数据文件
             media_dir = os.path.dirname(media_file)
@@ -569,7 +763,7 @@ class EnhancedTaskScheduler:
     def _handle_task_failure(self, task_execution: TaskExecution, error_msg: str, 
                            task_repo: PublishingTaskRepository, log_repo: PublishingLogRepository) -> bool:
         """
-        处理任务失败（使用提供的仓库实例）
+        🎯 Phase 3: 智能错误处理 - 使用错误分类器决定重试策略
         
         Args:
             task_execution: 任务执行信息
@@ -583,39 +777,71 @@ class EnhancedTaskScheduler:
         task_id = task_execution.task_id
         
         try:
-            # 检查是否应该重试
-            if task_execution.retry_count >= self.max_retries:
-                # 标记为最终失败
+            # 🧠 使用智能错误分类器分析错误
+            error_analysis = classify_and_handle_error(error_msg, task_execution.retry_count + 1)
+            error_type = error_analysis['error_type']
+            should_retry = error_analysis['should_retry']
+            retry_delay = error_analysis['retry_delay']
+            needs_human = error_analysis['needs_human_intervention']
+            
+            logger.info(f"🔍 任务 {task_id} 错误分析结果:")
+            logger.info(f"  - 错误类型: {error_type}")
+            logger.info(f"  - 应该重试: {should_retry}")
+            logger.info(f"  - 重试延迟: {retry_delay}秒")
+            logger.info(f"  - 需要人工介入: {needs_human}")
+            
+            if needs_human:
+                logger.warning(f"⚠️ 任务 {task_id} 需要人工介入: {error_type}")
+                # 标记为需要人工介入的失败
                 task_repo.update(task_id, {
-                    'status': TaskStatus.FAILED.value,
+                    'status': 'failed',
+                    'error_type': error_type,
                     'updated_at': datetime.now()
                 })
                 
                 log_repo.create_log(
                     task_id=task_id,
                     status="failed",
-                    error_message=error_msg
+                    error_message=f"[{error_type}] {error_msg} - 需要人工介入"
                 )
                 
                 return False
                 
-            # 计算重试延迟
-            retry_delay = min(60 * (2 ** task_execution.retry_count), 300)  # 指数退避，最大5分钟
+            if not should_retry or retry_delay is None:
+                logger.info(f"❌ 任务 {task_id} 达到重试限制或不适合重试")
+                # 标记为最终失败
+                task_repo.update(task_id, {
+                    'status': 'failed',
+                    'error_type': error_type,
+                    'updated_at': datetime.now()
+                })
+                
+                log_repo.create_log(
+                    task_id=task_id,
+                    status="failed",
+                    error_message=f"[{error_type}] {error_msg}"
+                )
+                
+                return False
+                
+            # 🔄 安排智能重试
+            logger.info(f"🔄 任务 {task_id} 将在 {retry_delay} 秒后重试 (类型: {error_type})")
             
             # 更新任务状态为重试中
             task_repo.update(task_id, {
-                'status': TaskStatus.RETRYING.value,
+                'status': 'retry',
+                'error_type': error_type,
                 'updated_at': datetime.now()
             })
             
-            # 记录重试日志
+            # 记录智能重试日志
             log_repo.create_log(
                 task_id=task_id,
                 status="retry",
-                error_message=f"重试次数: {task_execution.retry_count + 1}"
+                error_message=f"[{error_type}] 智能重试 #{task_execution.retry_count + 1}: {error_msg}"
             )
             
-            # 安排重试
+            # 安排重试任务
             retry_execution = TaskExecution(
                 task_id=task_id,
                 priority=task_execution.priority,
@@ -629,12 +855,193 @@ class EnhancedTaskScheduler:
             return True
             
         except Exception as e:
-            logger.error(f"处理任务失败异常: {e}")
+            logger.error(f"🔥 智能错误处理异常: {e}")
+            # 回退到简单重试逻辑
+            return self._fallback_retry_logic(task_execution, error_msg, task_repo, log_repo)
+    
+    def optimize_task_timing(self, task: PublishingTask) -> datetime:
+        """
+        📅 Phase 3.5: 使用时间预测器优化任务执行时间
+        
+        Args:
+            task: 发布任务
+            
+        Returns:
+            datetime: 优化后的执行时间
+        """
+        try:
+            # 获取任务属性
+            content_type = getattr(task, 'content_type', 'normal')
+            project_priority = getattr(task, 'project_priority', 3)
+            
+            # 计算最小延迟（避免过于频繁发布）
+            last_publish_time = self._get_last_publish_time(task.project_id)
+            min_delay_minutes = 30  # 默认30分钟间隔
+            
+            if last_publish_time:
+                time_since_last = (datetime.now() - last_publish_time).total_seconds() / 60
+                if time_since_last < 180:  # 3小时内有发布
+                    min_delay_minutes = max(30, 180 - int(time_since_last))
+                    
+            # 使用时间预测器预测最佳时间
+            prediction = self.timing_predictor.predict_optimal_time(
+                content_type=content_type,
+                project_priority=project_priority,
+                min_delay_minutes=min_delay_minutes,
+                max_delay_hours=24  # 最多延迟24小时
+            )
+            
+            logger.info(f"📅 任务 {task.id} 时间优化:")
+            logger.info(f"  - 原计划时间: {task.scheduled_at}")
+            logger.info(f"  - 优化后时间: {prediction.recommended_time}")
+            logger.info(f"  - 置信度: {prediction.confidence_score:.2f}")
+            logger.info(f"  - 推荐理由: {prediction.reasoning}")
+            
+            # 如果是高优先级任务且时间紧急，跳过优化
+            if project_priority >= 4 and task.scheduled_at:
+                time_diff = (datetime.now() - task.scheduled_at).total_seconds() / 3600
+                if abs(time_diff) <= 1:  # 1小时内的紧急任务
+                    logger.info(f"📅 任务 {task.id} 为紧急任务，跳过时间优化")
+                    return task.scheduled_at or datetime.now()
+                    
+            return prediction.recommended_time
+            
+        except Exception as e:
+            logger.error(f"📅 任务 {task.id} 时间优化失败: {e}")
+            # 回退到原时间或当前时间
+            return task.scheduled_at or datetime.now()
+    
+    def _get_last_publish_time(self, project_id: int) -> Optional[datetime]:
+        """获取项目最后发布时间"""
+        try:
+            session = self.db_manager.get_session()
+            log_repo = PublishingLogRepository(session)
+            
+            # 查询最近的成功发布记录
+            recent_log = log_repo.get_recent_successful_publish(project_id)
+            if recent_log:
+                return recent_log.published_at
+                
+        except Exception as e:
+            logger.error(f"获取最后发布时间失败: {e}")
+        finally:
+            self.db_manager.remove_session()
+            
+        return None
+    
+    def schedule_task_with_timing_optimization(self, task_id: int, 
+                                             priority: TaskPriority = TaskPriority.NORMAL) -> bool:
+        """
+        📅 带时间优化的任务调度
+        
+        Args:
+            task_id: 任务ID
+            priority: 任务优先级
+            
+        Returns:
+            是否成功调度
+        """
+        try:
+            # 获取任务信息
+            session = self.db_manager.get_session()
+            task_repo = PublishingTaskRepository(session)
+            task = task_repo.get_by_id(task_id)
+            
+            if not task:
+                logger.error(f"任务 {task_id} 不存在")
+                return False
+                
+            # 优化执行时间
+            optimized_time = self.optimize_task_timing(task)
+            
+            # 更新任务的调度时间
+            task_repo.update(task_id, {'scheduled_at': optimized_time})
+            session.commit()
+            
+            # 创建任务执行对象
+            task_execution = TaskExecution(
+                task_id=task_id,
+                priority=priority,
+                scheduled_time=optimized_time
+            )
+            
+            self.task_queue.put(task_execution)
+            logger.info(f"📅 任务 {task_id} 已优化调度至 {optimized_time.strftime('%Y-%m-%d %H:%M')}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"📅 带时间优化的任务调度失败: {e}")
             return False
+        finally:
+            self.db_manager.remove_session()
+    
+    def _fallback_retry_logic(self, task_execution: TaskExecution, error_msg: str,
+                             task_repo: PublishingTaskRepository, log_repo: PublishingLogRepository) -> bool:
+        """
+        回退重试逻辑 - 当错误分类器失败时使用
+        
+        Args:
+            task_execution: 任务执行信息
+            error_msg: 错误消息
+            task_repo: 任务仓库实例
+            log_repo: 日志仓库实例
+            
+        Returns:
+            是否安排了重试
+        """
+        task_id = task_execution.task_id
+        
+        logger.warning(f"🔄 任务 {task_id} 使用简单重试逻辑")
+        
+        # 检查是否应该重试
+        if task_execution.retry_count >= self.max_retries:
+            # 标记为最终失败
+            task_repo.update(task_id, {
+                'status': 'failed',
+                'updated_at': datetime.now()
+            })
+            
+            log_repo.create_log(
+                task_id=task_id,
+                status="failed",
+                error_message=error_msg
+            )
+            
+            return False
+            
+        # 计算重试延迟 - 简单指数退避
+        retry_delay = min(60 * (2 ** task_execution.retry_count), 300)  # 最大5分钟
+        
+        # 更新任务状态为重试中
+        task_repo.update(task_id, {
+            'status': 'retry',
+            'updated_at': datetime.now()
+        })
+        
+        # 记录重试日志
+        log_repo.create_log(
+            task_id=task_id,
+            status="retry",
+            error_message=f"简单重试 #{task_execution.retry_count + 1}: {error_msg}"
+        )
+        
+        # 安排重试
+        retry_execution = TaskExecution(
+            task_id=task_id,
+            priority=task_execution.priority,
+            scheduled_time=datetime.now() + timedelta(seconds=retry_delay),
+            retry_count=task_execution.retry_count + 1,
+            last_error=error_msg
+        )
+        
+        self.task_queue.put(retry_execution)
+        
+        return True
             
     def _determine_task_priority(self, task: PublishingTask) -> TaskPriority:
         """
-        根据任务属性确定优先级
+        🎯 Phase 3.4: 使用智能优先级权重算法确定任务优先级
         
         Args:
             task: 发布任务
@@ -642,6 +1049,42 @@ class EnhancedTaskScheduler:
         Returns:
             任务优先级
         """
+        try:
+            # 构建任务数据字典
+            task_data = {
+                'created_at': task.created_at,
+                'scheduled_at': task.scheduled_at,
+                'retry_count': task.retry_count or 0,
+                'project_id': task.project_id,
+                'project_priority': getattr(task, 'project_priority', 3),  # 默认中等优先级
+                'content_type': getattr(task, 'content_type', 'normal')
+            }
+            
+            # 使用优先级计算器计算得分
+            priority_score = self.priority_calculator.calculate_priority_score(task_data)
+            priority_level = get_priority_level(priority_score)
+            
+            # 根据得分映射到TaskPriority枚举
+            if priority_score >= 80:
+                task_priority = TaskPriority.URGENT
+            elif priority_score >= 60:
+                task_priority = TaskPriority.HIGH
+            elif priority_score >= 40:
+                task_priority = TaskPriority.NORMAL
+            else:
+                task_priority = TaskPriority.LOW
+                
+            logger.debug(f"🎯 任务 {task.id} 优先级计算: 得分={priority_score:.2f}, 级别={priority_level}, 枚举={task_priority.name}")
+            
+            return task_priority
+            
+        except Exception as e:
+            logger.error(f"🎯 任务 {task.id} 优先级计算失败: {e}")
+            # 回退到简单逻辑
+            return self._simple_priority_fallback(task)
+    
+    def _simple_priority_fallback(self, task: PublishingTask) -> TaskPriority:
+        """简单优先级回退逻辑"""
         # 根据重试次数调整优先级
         if task.retry_count > 2:
             return TaskPriority.LOW
@@ -721,10 +1164,29 @@ class EnhancedTaskScheduler:
                 logger.info(f"[SCHEDULER_DEBUG] 任务内容数据: {task.content_data}")
                 logger.info(f"[SCHEDULER_DEBUG] 任务媒体路径: {task.media_path}")
                 
-                # 检查任务状态
+                # 🛠️ 智能任务状态检查和恢复
                 if task.status not in ['pending', 'retry']:
-                    logger.error(f"[SCHEDULER_DEBUG] 任务 {task_id} 状态不正确: {task.status}")
-                    raise ValueError(f"任务 {task_id} 状态不正确: {task.status}")
+                    if task.status == 'running':
+                        # 检查是否是卡住的任务 - 如果运行时间超过阈值，重置状态
+                        task_stuck_timeout = self.config.get('task.stuck_timeout', 300)  # 5分钟
+                        
+                        if task.updated_at:
+                            time_since_update = (datetime.now() - task.updated_at).total_seconds()
+                            if time_since_update > task_stuck_timeout:
+                                logger.warning(f"[SCHEDULER_DEBUG] 任务 {task_id} 已运行{time_since_update:.0f}秒，超过阈值{task_stuck_timeout}秒，重置为待执行状态")
+                                task_repo.update(task_id, {'status': 'pending'})
+                                session.commit()
+                            else:
+                                logger.info(f"[SCHEDULER_DEBUG] 任务 {task_id} 正在运行中(已运行{time_since_update:.0f}秒)，跳过执行")
+                                return {'success': False, 'reason': 'task_already_running', 'running_time': time_since_update}
+                        else:
+                            # 如果没有更新时间，直接重置为待执行
+                            logger.warning(f"[SCHEDULER_DEBUG] 任务 {task_id} 状态为running但无更新时间，重置为待执行状态")
+                            task_repo.update(task_id, {'status': 'pending'})
+                            session.commit()
+                    else:
+                        logger.error(f"[SCHEDULER_DEBUG] 任务 {task_id} 状态不正确: {task.status}")
+                        raise ValueError(f"任务 {task_id} 状态不正确: {task.status}")
                 
                 # 更新任务状态为运行中
                 logger.info(f"[SCHEDULER_DEBUG] 更新任务状态为运行中")
@@ -920,31 +1382,30 @@ class EnhancedTaskScheduler:
                 logger.error(f"[SCHEDULER_PUBLISH_DEBUG] 推文内容为空")
                 raise ValueError("推文内容为空")
                 
-            # 检查媒体文件类型
-            if media_path and os.path.exists(media_path):
-                file_ext = os.path.splitext(media_path)[1].lower()
-                logger.info(f"[SCHEDULER_PUBLISH_DEBUG] 媒体文件扩展名: {file_ext}")
+            # 严格检查媒体文件存在性和类型
+            if not media_path or not os.path.exists(media_path):
+                logger.error(f"[SCHEDULER_PUBLISH_DEBUG] 媒体文件不存在或路径为空: {media_path}")
+                raise FileNotFoundError(f"媒体文件不存在或路径为空: {media_path}")
                 
-                if file_ext in ['.mp4', '.mov', '.avi', '.mkv']:
-                    # 视频文件
-                    logger.info(f"[SCHEDULER_PUBLISH_DEBUG] 发布视频推文")
-                    tweet_info, upload_time = self.publisher.post_tweet_with_video(
-                        tweet_text, media_path
-                    )
-                elif file_ext in ['.jpg', '.jpeg', '.png', '.gif']:
-                    # 图片文件
-                    logger.info(f"[SCHEDULER_PUBLISH_DEBUG] 发布图片推文")
-                    tweet_info, upload_time = self.publisher.post_tweet_with_images(
-                        tweet_text, [media_path]
-                    )
-                else:
-                    # 不支持的文件类型，发布纯文本
-                    logger.warning(f"[SCHEDULER_PUBLISH_DEBUG] 不支持的媒体文件类型: {file_ext}，发布纯文本推文")
-                    tweet_info, upload_time = self.publisher.post_text_tweet(tweet_text)
+            file_ext = os.path.splitext(media_path)[1].lower()
+            logger.info(f"[SCHEDULER_PUBLISH_DEBUG] 媒体文件扩展名: {file_ext}")
+            
+            if file_ext in ['.mp4', '.mov', '.avi', '.mkv']:
+                # 视频文件 - 这是我们期望的媒体类型
+                logger.info(f"[SCHEDULER_PUBLISH_DEBUG] 发布视频推文")
+                tweet_info, upload_time = self.publisher.post_tweet_with_video(
+                    tweet_text, media_path
+                )
+            elif file_ext in ['.jpg', '.jpeg', '.png', '.gif']:
+                # 图片文件
+                logger.info(f"[SCHEDULER_PUBLISH_DEBUG] 发布图片推文")
+                tweet_info, upload_time = self.publisher.post_tweet_with_images(
+                    tweet_text, [media_path]
+                )
             else:
-                # 没有媒体文件，发布纯文本
-                logger.info(f"[SCHEDULER_PUBLISH_DEBUG] 没有媒体文件，发布纯文本推文")
-                tweet_info, upload_time = self.publisher.post_text_tweet(tweet_text)
+                # 不支持的文件类型，直接失败而不是降级
+                logger.error(f"[SCHEDULER_PUBLISH_DEBUG] 不支持的媒体文件类型: {file_ext}")
+                raise ValueError(f"不支持的媒体文件类型: {file_ext}，期望的类型: .mp4, .mov, .avi, .mkv, .jpg, .jpeg, .png, .gif")
             
             logger.info(f"[SCHEDULER_PUBLISH_DEBUG] 发布成功，推文信息: {tweet_info}")
             logger.info(f"[SCHEDULER_PUBLISH_DEBUG] 上传时间: {upload_time}")

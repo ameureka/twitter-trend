@@ -46,7 +46,7 @@ class ScriptManager:
             self.logger.info("开始重置数据库...")
             
             # 执行数据库重置
-            result = self.reset_manager.reset_and_scan_all()
+            result = self.reset_manager.reset_and_scan()
             
             self.logger.info("数据库重置完成")
             return {

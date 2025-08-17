@@ -21,8 +21,9 @@ sys.path.insert(0, str(project_root))
 
 from app.database.database import DatabaseManager
 from app.core.project_manager import ProjectManager
-from app.utils.config import get_config
+from app.utils.enhanced_config import get_enhanced_config
 from app.utils.logger import get_logger, setup_logger
+from app.utils.path_manager import get_path_manager
 from app.database.models import User, Project, ContentSource, PublishingTask, PublishingLog, AnalyticsHourly
 
 
@@ -37,10 +38,13 @@ def get_project_folders(project_base_path: str) -> List[str]:
         项目文件夹名称列表
     """
     project_folders = []
-    base_path = Path(project_base_path)
+    
+    # 使用路径管理器解析相对路径
+    path_manager = get_path_manager()
+    base_path = path_manager.get_project_path(project_base_path)
     
     if not base_path.exists():
-        raise FileNotFoundError(f"项目基础路径不存在: {project_base_path}")
+        raise FileNotFoundError(f"项目基础路径不存在: {project_base_path} (解析为: {base_path})")
     
     # 遍历所有子文件夹
     for item in base_path.iterdir():
@@ -76,7 +80,7 @@ def clear_database_content(db_manager: DatabaseManager) -> Dict[str, int]:
     }
     
     try:
-        with db_manager.get_session() as session:
+        with db_manager.get_session_context() as session:
             # 按照外键依赖顺序删除数据
             
             # 1. 删除发布日志
@@ -184,7 +188,7 @@ def ensure_admin_user(db_manager: DatabaseManager) -> None:
     logger = get_logger(__name__)
     
     try:
-        with db_manager.get_session() as session:
+        with db_manager.get_session_context() as session:
             from app.database.repository import UserRepository
             user_repo = UserRepository(session)
             
@@ -218,7 +222,7 @@ def main():
     
     try:
         # 1. 初始化配置和数据库
-        config = get_config()
+        config = get_enhanced_config()
         
         # 使用相对路径避免硬编码
         project_root = Path(__file__).parent.parent.parent
@@ -257,7 +261,7 @@ def main():
             return
         
         # 7. 扫描所有项目并创建任务
-        with db_manager.get_session() as session:
+        with db_manager.get_session_context() as session:
             project_manager = ProjectManager(session, project_base_path, user_id=1)
             
             logger.info("开始扫描项目并创建任务...")
